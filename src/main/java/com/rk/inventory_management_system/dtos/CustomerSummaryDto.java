@@ -1,0 +1,13 @@
+package com.rk.inventory_management_system.dtos;
+
+
+import lombok.Builder;
+import lombok.Data;
+
+@Data
+@Builder
+public class CustomerSummaryDto {
+    private Long id;
+    private String name;
+}
+
