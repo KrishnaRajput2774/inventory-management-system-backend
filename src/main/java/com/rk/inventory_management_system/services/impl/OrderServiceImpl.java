@@ -1,11 +1,14 @@
 package com.rk.inventory_management_system.services.impl;
 
 import com.rk.inventory_management_system.dtos.*;
+import com.rk.inventory_management_system.dtos.OrderITemDto.OrderItemProductDto;
+import com.rk.inventory_management_system.dtos.ProductDtos.ProductResponseDto;
 import com.rk.inventory_management_system.entities.*;
 import com.rk.inventory_management_system.entities.Enums.OrderStatus;
 import com.rk.inventory_management_system.entities.Enums.OrderType;
 import com.rk.inventory_management_system.exceptions.*;
 import com.rk.inventory_management_system.repositories.OrderRepository;
+import com.rk.inventory_management_system.schedulers.LowStockScheduler;
 import com.rk.inventory_management_system.services.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +23,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -32,16 +34,13 @@ public class OrderServiceImpl implements OrderService {
     private final SupplierService supplierService;
     private final ProductService productService;
     private final ProductCategoryService productCategoryService;
-
-
-
+    private final LowStockScheduler lowStockScheduler;
 
     @Override
     @Transactional
     public OrderDto createOrder(OrderDto orderDto) {
         log.info("Starting order creation for order type: {}", orderDto.getOrderType());
         validateOrderDto(orderDto);
-
         Order order = buildBaseOrder(orderDto);
 
         try {
@@ -56,12 +55,12 @@ public class OrderServiceImpl implements OrderService {
             // Calculate total price before saving
             calculateOrderTotal(order);
 
+            order.setCreatedAt(LocalDateTime.now());
             Order savedOrder = orderRepository.save(order);
             log.info("Order created successfully with ID: {}, Total: {}",
                     savedOrder.getId(), savedOrder.getTotalPrice());
 
             return buildOrderDtoToReturnToController(savedOrder);
-
 
         } catch (Exception e) {
             log.error("Failed to create order of type {}: {}", orderDto.getOrderType(), e.getMessage(), e);
@@ -69,17 +68,17 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-// --- Core Processing Methods ---
+    // --- Core Processing Methods ---
 
     private void processOutwardOrder(Order order, OrderDto orderDto) {
-        log.info("Processing outward order with {} items", orderDto.getOrderItems().size());
+        log.info("Processing SALE order with {} items", orderDto.getOrderItems().size());
 
         Customer customer = getOrCreateCustomer(orderDto);
         order.setCustomer(customer);
         order.setSupplier(null);
 
         // Pre-validate stock availability for all items
-         validateStockAvailabilityForOutward(orderDto.getOrderItems());
+        validateStockAvailabilityForOutward(orderDto.getOrderItems());
 
         List<OrderItem> orderItems = createOutwardOrderItems(order, orderDto.getOrderItems());
         order.setOrderItems(orderItems);
@@ -100,7 +99,7 @@ public class OrderServiceImpl implements OrderService {
         log.info("Inward order processed: {} products updated/created", orderItems.size());
     }
 
-// --- Stock Management Methods ---
+    // --- Stock Management Methods ---
 
     private void validateStockAvailabilityForOutward(List<OrderItemDto> orderItemDtos) {
         List<String> insufficientStockItems = new ArrayList<>();
@@ -109,11 +108,8 @@ public class OrderServiceImpl implements OrderService {
             Long productId = itemDto.getProductDto().getProductId();
             int quantityRequested = itemDto.getQuantity();
 
-            // Get product by ID
-            ProductDto productDto = productService.getProductById(productId);
-            Product product = modelMapper.map(productDto,Product.class);
-
-            //manually setting up cause of ModelMapper
+            ProductResponseDto productDto = productService.getProductById(productId);
+            Product product = modelMapper.map(productDto, Product.class);
 
             if (product == null) {
                 throw new ResourceNotFoundException(
@@ -140,7 +136,6 @@ public class OrderServiceImpl implements OrderService {
                     "Insufficient stock for the following items: " + String.join("; ", insufficientStockItems)
             );
         }
-
     }
 
     private List<OrderItem> createOutwardOrderItems(Order order, List<OrderItemDto> orderItemDtos) {
@@ -161,26 +156,19 @@ public class OrderServiceImpl implements OrderService {
         Long productId = itemDto.getProductDto().getProductId();
         int quantityRequested = itemDto.getQuantity();
 
-
         List<ProductDto> productDtos = productService.reduceStockOfProduct(productId, quantityRequested);
-
-        //TODO here if the product with specific id is not present but same product could be present with different supplier
-        //TODO let frontend send ProductRequestDto which would contain name and brand according to which we can find product in DB
-
         ProductDto productDto = productDtos.getFirst();
-        Product product = modelMapper.map(productDto, Product.class); // we want any product which has reduced stock
-
-        // Reduce stock
+        Product product = modelMapper.map(productDto, Product.class);
 
         // Create order item
         OrderItem orderItem = new OrderItem();
         orderItem.setOrder(order);
-        orderItem.setProduct(product); //here we specifically don`t know which supplier product was sell we just product name and brand
+        orderItem.setProduct(product);
         orderItem.setQuantity(quantityRequested);
 
         // Use price from DTO if provided, otherwise use product price
         Double priceToUse = itemDto.getPriceAtOrderTime() != null ?
-                itemDto.getPriceAtOrderTime() : product.getPrice();
+                itemDto.getPriceAtOrderTime() : product.getSellingPrice();
         orderItem.setPriceAtOrderTime(priceToUse);
 
         log.debug("Allocated {} units of Product: {})",
@@ -207,29 +195,26 @@ public class OrderServiceImpl implements OrderService {
         Product product;
 
         if (productId != null) {
-            // Update existing product
-            ProductDto productDto  = productService.getProductById(productId);
-            product = modelMapper.map(productDto,Product.class);
+            ProductResponseDto productDto = productService.getProductById(productId);
+            product = modelMapper.map(productDto, Product.class);
 
             if (product == null) {
                 throw new ResourceNotFoundException("Product not found with ID: " + productId);
             }
 
-            // Verify the product belongs to the correct supplier
             if (!product.getSupplier().getId().equals(supplier.getId())) {
-                throw new IllegalArgumentException(
-                        "Product ID " + productId + " does not belong to supplier: " + supplier.getName()
-                );
+//                throw new IllegalArgumentException(
+//                        "Product ID " + productId + " does not belong to supplier: " + supplier.getName()
+//                );
+                // if product doesnt belongs to supplier then create
             }
-            //TODO here can Be error
+
             ProductDto updatedProductDto = productService.increaseStockOfProduct(product.getId(), quantity);
             product = modelMapper.map(updatedProductDto, Product.class);
 
             log.info("Increased stock for product: {} (ID: {}) by {} units",
                     product.getName(), productId, quantity);
         } else {
-            // For inward orders, if productId is null, we need additional product details
-            // This would require extending your DTO or handling it differently
             throw new IllegalArgumentException(
                     "Product ID is required for inward order items. " +
                             "Create Product then Increase Stock"
@@ -241,21 +226,20 @@ public class OrderServiceImpl implements OrderService {
         orderItem.setProduct(product);
         orderItem.setQuantity(quantity);
 
-        // Use price from DTO if provided, otherwise use product price
         Double priceToUse = itemDto.getPriceAtOrderTime() != null ?
-                itemDto.getPriceAtOrderTime() : product.getPrice();
+                itemDto.getPriceAtOrderTime() : product.getSellingPrice();
         orderItem.setPriceAtOrderTime(priceToUse);
 
         return orderItem;
     }
 
-// --- Price Calculation ---
+    // --- Price Calculation ---
 
     private void calculateOrderTotal(Order order) {
         double totalPrice = order.getOrderItems().stream()
                 .mapToDouble(item -> {
                     Double price = item.getPriceAtOrderTime() != null ?
-                            item.getPriceAtOrderTime() : item.getProduct().getPrice();
+                            item.getPriceAtOrderTime() : item.getProduct().getSellingPrice();
                     return price * item.getQuantity();
                 })
                 .sum();
@@ -264,9 +248,10 @@ public class OrderServiceImpl implements OrderService {
         log.debug("Calculated order total: {}", totalPrice);
     }
 
-// --- Validation Methods ---
+    // --- Validation Methods ---
 
     private void validateOrderDto(OrderDto orderDto) {
+        log.info("Validating order Dto");
         if (orderDto == null) {
             throw new IllegalArgumentException("Order data cannot be null");
         }
@@ -283,19 +268,19 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalArgumentException("Order must contain at least one item");
         }
 
-        // Validate each order item
         for (int i = 0; i < orderDto.getOrderItems().size(); i++) {
             OrderItemDto item = orderDto.getOrderItems().get(i);
             validateOrderItem(item, i);
         }
 
-        // Type-specific validations
         validateOrderTypeSpecificFields(orderDto);
 
         log.debug("Order validation completed successfully");
     }
 
     private void validateOrderItem(OrderItemDto item, int index) {
+        log.info("Validating order Items in Order Dto");
+
         if (item == null) {
             throw new IllegalArgumentException("Order item at index " + index + " cannot be null");
         }
@@ -308,39 +293,42 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalArgumentException("Quantity must be positive for order item at index " + index);
         }
 
-        // Validate price if provided
         if (item.getPriceAtOrderTime() != null && item.getPriceAtOrderTime() < 0) {
             throw new IllegalArgumentException("Price cannot be negative for order item at index " + index);
         }
     }
 
     private void validateOrderTypeSpecificFields(OrderDto orderDto) {
+        log.info("Validating Order type Specific Fields of OrderDto");
+
         if (orderDto.getOrderType() == OrderType.SALE) {
-            if (orderDto.getCustomerDto().getCustomerId() == null && (
-                    orderDto.getCustomerDto().getEmail() == null
-                    || orderDto.getCustomerDto().getContactNumber() == null
-                    || orderDto.getCustomerDto().getOrders().isEmpty()
+            if (orderDto.getCustomer().getCustomerId() == null && (
+                    orderDto.getCustomer().getEmail() == null
+                            || orderDto.getCustomer().getContactNumber() == null
+                            || orderDto.getCustomer().getOrders().isEmpty()
             )) {
                 throw new IllegalArgumentException("Customer details are required for outward orders");
             }
         } else if (orderDto.getOrderType() == OrderType.PURCHASE) {
-            if (orderDto.getSupplierDto().getId() == null && (
-                    orderDto.getSupplierDto().getName() == null
-                    || orderDto.getSupplierDto().getEmail() == null
-                    || orderDto.getSupplierDto().getContactNumber()==null
-                    || orderDto.getSupplierDto().getProducts().isEmpty()
+            if (orderDto.getSupplier().getId() == null && (
+                    orderDto.getSupplier().getName() == null
+                            || orderDto.getSupplier().getEmail() == null
+                            || orderDto.getSupplier().getContactNumber() == null
+                            || orderDto.getSupplier().getProducts().isEmpty()
             )) {
                 throw new IllegalArgumentException("Supplier details are required for inward orders");
             }
         }
     }
 
-// --- Helper Methods ---
+    // --- Helper Methods ---
 
     private Order buildBaseOrder(OrderDto orderDto) {
+        log.info("Building Order entity");
+
         return Order.builder()
                 .orderType(orderDto.getOrderType())
-                .orderStatus(OrderStatus.CREATED)
+                .orderStatus(orderDto.getOrderStatus())       //todo can change
                 .paymentType(orderDto.getPaymentType())
                 .totalPrice(0.0)
                 .build();
@@ -350,16 +338,16 @@ public class OrderServiceImpl implements OrderService {
         try {
             Customer customer = null;
 
-            if (orderDto.getCustomerDto().getCustomerId() != null) {
+            if (orderDto.getCustomer().getCustomerId() != null) {
                 customer = modelMapper.map(
-                        customerService.getCustomerById(orderDto.getCustomerDto().getCustomerId()),
+                        customerService.getCustomerById(orderDto.getCustomer().getCustomerId()),
                         Customer.class
                 );
             }
 
-            if (customer == null && orderDto.getCustomerDto() != null) {
+            if (customer == null && orderDto.getCustomer() != null) {
                 customer = modelMapper.map(
-                        customerService.createCustomer(orderDto.getCustomerDto()),
+                        customerService.createCustomer(orderDto.getCustomer()),
                         Customer.class
                 );
                 log.info("Created new customer: {}", customer.getName());
@@ -380,13 +368,13 @@ public class OrderServiceImpl implements OrderService {
         try {
             Supplier supplier = null;
 
-            if (orderDto.getSupplierDto().getId() != null) {
-                supplier = supplierService.getSupplierById(orderDto.getSupplierDto().getId());
+            if (orderDto.getSupplier().getId() != null) {
+                supplier = supplierService.getSupplierById(orderDto.getSupplier().getId());
             }
 
-            if (supplier == null && orderDto.getSupplierDto() != null) {
+            if (supplier == null && orderDto.getSupplier() != null) {
                 supplier = modelMapper.map(
-                        supplierService.createSupplier(orderDto.getSupplierDto()),
+                        supplierService.createSupplier(orderDto.getSupplier()),
                         Supplier.class
                 );
                 log.info("Created new supplier: {}", supplier.getName());
@@ -402,7 +390,6 @@ public class OrderServiceImpl implements OrderService {
             throw new SupplierProcessingException("Failed to process supplier details", e);
         }
     }
-
 
     @Override
     @Transactional
@@ -422,15 +409,11 @@ public class OrderServiceImpl implements OrderService {
         log.info("Found order with ID: {}, current status: {}", orderId, order.getOrderStatus());
 
         try {
-            // Use the generalized updateOrderStatus method
             Order cancelledOrder = updateOrderStatus(order, OrderStatus.CANCELLED);
-
             log.info("Order {} successfully cancelled", orderId);
-
             return buildOrderDtoToReturnToController(cancelledOrder);
 
         } catch (IllegalStateException e) {
-            // Convert status transition errors to more specific exceptions
             throw new InvalidOrderCancellationException(e.getMessage());
         } catch (Exception e) {
             log.error("Failed to cancel order {}: {}", orderId, e.getMessage(), e);
@@ -456,16 +439,11 @@ public class OrderServiceImpl implements OrderService {
         log.info("Found order with ID: {}, current status: {}", orderId, order.getOrderStatus());
 
         try {
-            // Use the generalized updateOrderStatus method
             Order completedOrder = updateOrderStatus(order, OrderStatus.COMPLETED);
-
             log.info("Order {} successfully completed", orderId);
-
             return buildOrderDtoToReturnToController(completedOrder);
 
-
         } catch (IllegalStateException e) {
-            // Convert status transition errors to more specific exceptions
             throw new InvalidOrderCompletionException(e.getMessage());
         } catch (Exception e) {
             log.error("Failed to complete order {}: {}", orderId, e.getMessage(), e);
@@ -489,18 +467,28 @@ public class OrderServiceImpl implements OrderService {
         // Validate status transitions
         validateStatusTransition(currentStatus, newStatus);
 
+        // Handle status-specific operations BEFORE updating the status
+        switch (newStatus) {
+            case COMPLETED -> {
+                if (OrderType.SALE.equals(order.getOrderType())) {
+                    updateQuantitySoldForCompletedSaleOrder(order);
+                }
+            }
+            case CANCELLED -> {
+                // For sale orders, restore stock when cancelling
+                if (OrderType.SALE.equals(order.getOrderType())) {
+                    restoreStockAndQuantitySoldForCancelledSaleOrder(order, currentStatus);
+                }
+            }
+        }
+
+        // Update the order status and timestamp
         order.setOrderStatus(newStatus);
         order.setUpdatedAt(LocalDateTime.now());
 
         // Set specific timestamps based on status
-        switch (newStatus) {
-            case COMPLETED -> order.setCompletedAt(LocalDateTime.now());
-            case CANCELLED -> {
-                // For outward orders, restore stock when cancelling
-                if (OrderType.SALE.equals(order.getOrderType())) {
-                    restoreStockForCancelledOrder(order);
-                }
-            }
+        if (newStatus == OrderStatus.COMPLETED) {
+            order.setCompletedAt(LocalDateTime.now());
         }
 
         Order updatedOrder = orderRepository.save(order);
@@ -509,9 +497,93 @@ public class OrderServiceImpl implements OrderService {
         return updatedOrder;
     }
 
+    /**
+     * Updates quantitySold for all products in a completed SALE order
+     */
+    private void updateQuantitySoldForCompletedSaleOrder(Order order) {
+        if (order.getOrderItems() == null || order.getOrderItems().isEmpty()) {
+            return;
+        }
+
+        log.info("Updating quantitySold for completed sale order: {}", order.getId());
+
+        List<Product> productsToUpdate = new ArrayList<>();
+
+        for (OrderItem orderItem : order.getOrderItems()) {
+            Product product = orderItem.getProduct();
+            int soldQuantity = orderItem.getQuantity();
+
+            // Update quantitySold
+            int currentQuantitySold = product.getQuantitySold() != null ? product.getQuantitySold() : 0;
+            product.setQuantitySold(currentQuantitySold + soldQuantity);
+
+            productsToUpdate.add(product);
+
+            log.debug("Updated quantitySold for product {} (ID: {}) by {} units. New total: {}",
+                    product.getName(), product.getId(), soldQuantity, product.getQuantitySold());
+        }
+
+        // Save all updated products
+        productService.saveAll(productsToUpdate);
+
+        // Send low stock alerts
+        lowStockScheduler.checkAndSendLowStockAlertOrderSpecific(productsToUpdate, order);
+
+        log.info("QuantitySold update completed for order: {}", order.getId());
+    }
+
+    /**
+     * Restores stock for cancelled SALE orders and adjusts quantitySold if previously completed
+     */
+    private void restoreStockAndQuantitySoldForCancelledSaleOrder(Order order, OrderStatus previousStatus) {
+        if (order.getOrderItems() == null || order.getOrderItems().isEmpty()) {
+            return;
+        }
+
+        log.info("Restoring stock for cancelled sale order: {} (previous status: {})", order.getId(), previousStatus);
+
+        List<Product> productsToUpdate = new ArrayList<>();
+
+        for (OrderItem orderItem : order.getOrderItems()) {
+            try {
+                Product product = orderItem.getProduct();
+                int quantityToRestore = orderItem.getQuantity();
+
+                // ALWAYS restore stock for cancelled sale orders (regardless of previous status)
+                productService.increaseStockOfProduct(product.getId(), quantityToRestore);
+                log.debug("Restored {} units of stock for product ID: {}", quantityToRestore, product.getId());
+
+                // ONLY reverse quantitySold if the order was previously COMPLETED
+                if (previousStatus == OrderStatus.COMPLETED) {
+                    int currentQuantitySold = product.getQuantitySold() != null ? product.getQuantitySold() : 0;
+                    int newQuantitySold = Math.max(0, currentQuantitySold - quantityToRestore);
+                    product.setQuantitySold(newQuantitySold);
+
+                    productsToUpdate.add(product);
+
+                    log.debug("Reversed quantitySold for product {} (ID: {}) by {} units. New total: {}",
+                            product.getName(), product.getId(), quantityToRestore, newQuantitySold);
+                } else {
+                    log.debug("No quantitySold adjustment needed for product {} as order was not previously completed",
+                            product.getName());
+                }
+
+            } catch (Exception e) {
+                log.error("Failed to restore stock for product in order item: {}", e.getMessage());
+            }
+        }
+
+        // Save updated products if any quantitySold changes were made
+        if (!productsToUpdate.isEmpty()) {
+            productService.saveAll(productsToUpdate);
+            log.info("Updated quantitySold for {} products after cancellation", productsToUpdate.size());
+        }
+
+        log.info("Stock restoration completed for cancelled order: {}", order.getId());
+    }
+
     // Helper method to validate status transitions
     private void validateStatusTransition(OrderStatus currentStatus, OrderStatus newStatus) {
-        // Define valid transitions
         boolean isValidTransition = switch (currentStatus) {
             case CREATED -> newStatus == OrderStatus.PROCESSING ||
                     newStatus == OrderStatus.CANCELLED ||
@@ -530,31 +602,6 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    // Helper method to restore stock for cancelled outward orders
-    private void restoreStockForCancelledOrder(Order order) {
-        if (order.getOrderItems() == null || order.getOrderItems().isEmpty()) {
-            return;
-        }
-
-        log.info("Restoring stock for cancelled outward order: {}", order.getId());
-
-        for (OrderItem orderItem : order.getOrderItems()) {
-            try {
-                Long productId = orderItem.getProduct().getId();
-                int quantityToRestore = orderItem.getQuantity();
-
-                productService.increaseStockOfProduct(productId, quantityToRestore);
-
-                log.debug("Restored {} units for product ID: {}", quantityToRestore, productId);
-            } catch (Exception e) {
-                log.error("Failed to restore stock for product in order item: {}", e.getMessage());
-                // Continue with other items but log the error
-            }
-        }
-
-        log.info("Stock restoration completed for order: {}", order.getId());
-    }
-
     @Override
     @Transactional(readOnly = true)
     public List<OrderDto> getAllOrdersOfCustomer(Long customerId) {
@@ -564,7 +611,6 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalArgumentException("Customer ID cannot be null");
         }
 
-        // Verify customer exists
         CustomerDto customerDto = customerService.getCustomerById(customerId);
         if (customerDto == null) {
             throw new ResourceNotFoundException("Customer not found with ID: " + customerId);
@@ -576,10 +622,16 @@ public class OrderServiceImpl implements OrderService {
         log.info("Found {} orders for customer ID: {}", orders.size(), customerId);
 
         return orders.stream()
-                .map(order ->{
-                    return buildOrderDtoToReturnToController(order);
-                })
+                .map(this::buildOrderDtoToReturnToController)
                 .toList();
+    }
+
+    @Override
+    public List<OrderDto> getAllOrders() {
+        return orderRepository.findAll()
+                .stream()
+                .map(this::buildOrderDtoToReturnToController)
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -598,7 +650,6 @@ public class OrderServiceImpl implements OrderService {
                 });
 
         log.info("Successfully retrieved order with ID: {}", orderId);
-
         return buildOrderDtoToReturnToController(order);
     }
 
@@ -607,15 +658,28 @@ public class OrderServiceImpl implements OrderService {
         return orderRepository.findAllById(orderIds);
     }
 
+    @Override
+    public void updateOrderStatus(Long orderId, String orderStatus) {
+        Order order = orderRepository.findById(orderId).orElseThrow(
+                () -> new ResourceNotFoundException("Order not found with id: " + orderId)
+        );
+
+        OrderStatus newStatus = OrderStatus.valueOf(orderStatus);
+        updateOrderStatus(order, newStatus);
+
+        log.info("Order with ID {} updated to status {}", orderId, orderStatus);
+    }
+
     OrderDto buildOrderDtoToReturnToController(Order order) {
         return OrderDto.builder()
                 .orderId(order.getId())
+                .createdAt(order.getCreatedAt())
                 .orderType(order.getOrderType())
                 .orderStatus(order.getOrderStatus())
-                .customerDto(order.getCustomer() != null
+                .customer(order.getCustomer() != null
                         ? modelMapper.map(order.getCustomer(), CustomerDto.class)
                         : null)
-                .supplierDto(order.getSupplier() != null
+                .supplier(order.getSupplier() != null
                         ? modelMapper.map(order.getSupplier(), SupplierDto.class)
                         : null)
                 .orderItems(order.getOrderItems() != null
@@ -628,11 +692,12 @@ public class OrderServiceImpl implements OrderService {
                 .paymentType(order.getPaymentType())
                 .build();
     }
+
     private OrderItemDto mapOrderItemToDto(OrderItem orderItem) {
         return OrderItemDto.builder()
                 .orderItemId(orderItem.getId())
                 .productDto(orderItem.getProduct() != null
-                        ? modelMapper.map(orderItem.getProduct(), ProductDto.class)
+                        ? modelMapper.map(orderItem.getProduct(), OrderItemProductDto.class)
                         : null)
                 .priceAtOrderTime(orderItem.getPriceAtOrderTime())
                 .quantity(orderItem.getQuantity())

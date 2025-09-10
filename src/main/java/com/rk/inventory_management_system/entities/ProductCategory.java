@@ -4,7 +4,9 @@ package com.rk.inventory_management_system.entities;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.springframework.data.annotation.CreatedDate;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -23,4 +25,9 @@ public class ProductCategory {
 
     @OneToMany(mappedBy = "category", fetch = FetchType.LAZY)
     private List<Product> products = new ArrayList<>();
+
+    private LocalDate createdDate;
+
+    private String description;
+
 }

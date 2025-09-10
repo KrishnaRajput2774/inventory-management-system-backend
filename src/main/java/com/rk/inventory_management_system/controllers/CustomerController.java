@@ -5,6 +5,7 @@ import com.rk.inventory_management_system.dtos.OrderDto;
 import com.rk.inventory_management_system.entities.Customer;
 import com.rk.inventory_management_system.services.CustomerService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,7 +28,7 @@ public class CustomerController {
         return ResponseEntity.ok(customerService.getCustomerById(customerId));
     }
 
-    @GetMapping("/all")
+    @GetMapping(path = "/all",produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<List<CustomerDto>> getAllCustomers() {
         return ResponseEntity.ok(customerService.getAllCustomers());
     }

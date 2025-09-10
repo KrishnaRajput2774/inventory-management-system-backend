@@ -13,10 +13,10 @@ import com.rk.inventory_management_system.exceptions.InsufficientStockException;
 import com.rk.inventory_management_system.exceptions.OrderItemManagementException;
 import com.rk.inventory_management_system.exceptions.ResourceNotFoundException;
 import com.rk.inventory_management_system.exceptions.StockManagementException;
-import com.rk.inventory_management_system.repositories.OrderItemRepository;
 import com.rk.inventory_management_system.repositories.OrderRepository;
+import com.rk.inventory_management_system.repositories.ProductRepository;
+import com.rk.inventory_management_system.schedulers.LowStockScheduler;
 import com.rk.inventory_management_system.services.OrderItemService;
-import com.rk.inventory_management_system.services.OrderService;
 import com.rk.inventory_management_system.services.ProductService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,11 +34,11 @@ import java.util.Optional;
 @Slf4j
 public class OrderItemServiceImpl implements OrderItemService {
 
-    private final OrderService orderService;
-    private final OrderItemRepository orderItemRepository;
     private final ProductService productService;
     private final OrderRepository orderRepository;
     private final ModelMapper modelMapper;
+    private final LowStockScheduler lowStockScheduler;
+    private final ProductRepository productRepository;
 
     @Override
     @Transactional
@@ -82,7 +82,7 @@ public class OrderItemServiceImpl implements OrderItemService {
             if (existingOrderItem.isPresent()) {
                 // Product already exists in order - update quantity
                 log.info("Product ID {} already exists in order {}. Updating quantity.", productId, orderId);
-                updateExistingOrderItem(existingOrderItem.get(), orderItemDto, order.getOrderType());
+                updateExistingOrderItem(existingOrderItem.get(), orderItemDto, order);
             } else {
                 // Product doesn't exist in order - create new order item
                 log.info("Adding new product ID {} to order {}.", productId, orderId);
@@ -110,7 +110,7 @@ public class OrderItemServiceImpl implements OrderItemService {
     }
 
     // Enhanced helper method to update existing order item
-    private void updateExistingOrderItem(OrderItem existingOrderItem, OrderItemDto orderItemDto, OrderType orderType) {
+    private void updateExistingOrderItem(OrderItem existingOrderItem, OrderItemDto orderItemDto, Order order) {
         int newQuantityToAdd = orderItemDto.getQuantity();
         int currentQuantity = existingOrderItem.getQuantity();
         int newTotalQuantity = currentQuantity + newQuantityToAdd;
@@ -118,20 +118,38 @@ public class OrderItemServiceImpl implements OrderItemService {
         log.info("Updating existing order item. Current quantity: {}, Adding: {}, New total: {}",
                 currentQuantity, newQuantityToAdd, newTotalQuantity);
 
-        if (OrderType.SALE.equals(orderType)) {
-            // For outward orders, reduce stock
-            productService.reduceStockOfProduct(existingOrderItem.getProduct().getId(), newQuantityToAdd);
-        } else if (OrderType.PURCHASE.equals(orderType)) {
-            // For inward orders, increase stock
-            productService.increaseStockOfProduct(existingOrderItem.getProduct().getId(), newQuantityToAdd);
+        Product product = existingOrderItem.getProduct();
+        List<Product> productsForAlert = new ArrayList<>();
+
+        if (OrderType.SALE.equals(order.getOrderType())) {
+            // For sale orders, reduce stock and trigger alerts
+            productService.reduceStockOfProduct(product.getId(), newQuantityToAdd);
+            productsForAlert.add(product);
+
+            // Handle quantitySold only if order is already COMPLETED
+            if (OrderStatus.COMPLETED.equals(order.getOrderStatus())) {
+                int currentQuantitySold = product.getQuantitySold() != null ? product.getQuantitySold() : 0;
+                product.setQuantitySold(currentQuantitySold + newQuantityToAdd);
+                log.info("Updated quantitySold for completed order. Product: {}, Added: {}, New total: {}",
+                        product.getName(), newQuantityToAdd, product.getQuantitySold());
+            }
+
+        } else if (OrderType.PURCHASE.equals(order.getOrderType())) {
+            // For purchase orders, increase stock
+            productService.increaseStockOfProduct(product.getId(), newQuantityToAdd);
         }
 
         // Update the existing order item quantity
         existingOrderItem.setQuantity(newTotalQuantity);
 
-        // Update price if provided in the DTO (optional - you might want to keep original price)
+        // Update price if provided in the DTO
         if (orderItemDto.getPriceAtOrderTime() != null) {
             existingOrderItem.setPriceAtOrderTime(orderItemDto.getPriceAtOrderTime());
+        }
+
+        // Trigger low stock alerts for sale orders
+        if (!productsForAlert.isEmpty()) {
+            lowStockScheduler.checkAndSendLowStockAlertOrderSpecific(productsForAlert, order);
         }
 
         log.info("Successfully updated order item ID: {} with new quantity: {}",
@@ -170,7 +188,6 @@ public class OrderItemServiceImpl implements OrderItemService {
                     return new ResourceNotFoundException("Order item not found with ID: " + orderItemId);
                 });
 
-        // Fix the logic - compare with orderItem quantity, not total stock
         if (quantityToRemove > orderItem.getQuantity()) {
             throw new IllegalArgumentException(
                     String.format("Cannot remove %d units. Order item only has %d units.",
@@ -179,9 +196,31 @@ public class OrderItemServiceImpl implements OrderItemService {
         }
 
         try {
-            // Handle stock restoration for outward orders
+            Product product = orderItem.getProduct();
+
+            // Handle stock restoration and quantitySold adjustment
             if (OrderType.SALE.equals(order.getOrderType())) {
-                restoreStockForRemovedQuantity(orderItem.getProduct().getId(), quantityToRemove);
+                // Always restore stock for removed quantities in sale orders
+                restoreStockForRemovedQuantity(product.getId(), quantityToRemove);
+
+                // Handle quantitySold only if order is already COMPLETED
+                if (OrderStatus.COMPLETED.equals(order.getOrderStatus())) {
+                    int currentQuantitySold = product.getQuantitySold() != null ? product.getQuantitySold() : 0;
+                    int newQuantitySold = Math.max(0, currentQuantitySold - quantityToRemove);
+                    product.setQuantitySold(newQuantitySold);
+                    productRepository.save(product);
+
+                    log.info("Adjusted quantitySold for completed order. Product: {}, Removed: {}, New total: {}",
+                            product.getName(), quantityToRemove, newQuantitySold);
+                }
+            } else if (OrderType.PURCHASE.equals(order.getOrderType())) {
+                // For purchase orders, reduce stock when removing items
+                if (product.getStockQuantity() >= quantityToRemove) {
+                    productService.reduceStockOfProduct(product.getId(), quantityToRemove);
+                } else {
+                    log.warn("Cannot reduce stock for product {} below zero. Current stock: {}, Trying to remove: {}",
+                            product.getName(), product.getStockQuantity(), quantityToRemove);
+                }
             }
 
             if (quantityToRemove.equals(orderItem.getQuantity())) {
@@ -227,7 +266,7 @@ public class OrderItemServiceImpl implements OrderItemService {
 
         if (order.getOrderItems() == null || order.getOrderItems().isEmpty()) {
             log.info("No items found for order ID: {}", orderId);
-            return OrderResponseDto.builder().build();
+            return buildEmptyOrderResponseDto(order);
         }
 
         log.info("Retrieved {} items for order ID: {}", order.getOrderItems().size(), orderId);
@@ -236,7 +275,6 @@ public class OrderItemServiceImpl implements OrderItemService {
 
     // --- Helper Methods ---
 
-    // Enhanced method to fetch order with properly loaded relationships
     private Order getOrderWithItems(Long orderId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> {
@@ -275,7 +313,8 @@ public class OrderItemServiceImpl implements OrderItemService {
 
     private void validateOrderCanBeModified(Order order) {
         if (OrderStatus.COMPLETED.equals(order.getOrderStatus())) {
-            throw new IllegalStateException("Cannot modify completed order");
+            log.warn("Attempting to modify completed order ID: {}", order.getId());
+            throw new IllegalStateException("Cannot modify completed order. Use order status management for completed orders.");
         }
 
         if (OrderStatus.CANCELLED.equals(order.getOrderStatus())) {
@@ -283,12 +322,11 @@ public class OrderItemServiceImpl implements OrderItemService {
         }
     }
 
-    // ✅ FIXED: Now uses managed entity instead of DTO->Entity mapping
     private void validateStockAvailabilityForSingleItem(OrderItemDto orderItemDto) {
         Long productId = orderItemDto.getProductDto().getProductId();
         int quantityRequested = orderItemDto.getQuantity();
 
-        // ✅ FIXED: Fetch managed entity directly from repository
+        // Fetch managed entity directly from repository
         Product product = productService.getProductByIdWithLock(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with ID: " + productId));
 
@@ -305,26 +343,38 @@ public class OrderItemServiceImpl implements OrderItemService {
         }
     }
 
-    // ✅ FIXED: Enhanced createOrderItemForExistingOrder method with proper entity management
     private OrderItem createOrderItemForExistingOrder(Order order, OrderItemDto orderItemDto) {
         Long productId = orderItemDto.getProductDto().getProductId();
         int quantity = orderItemDto.getQuantity();
 
-        // ✅ FIXED: Fetch the managed entity directly from repository instead of mapping DTO
+        // Fetch the managed entity directly from repository
         Product product = productService.getProductByIdWithLock(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with ID: " + productId));
 
-
         if (OrderType.SALE.equals(order.getOrderType())) {
-            // For outward orders, reduce stock
+            // For sale orders, reduce stock and trigger alerts
             List<ProductDto> updatedProductDtos = productService.reduceStockOfProduct(productId, quantity);
             if (updatedProductDtos == null || updatedProductDtos.isEmpty()) {
                 throw new StockManagementException("Failed to reduce stock for product ID: " + productId);
             }
+
+            // Trigger low stock alert
+            lowStockScheduler.checkAndSendLowStockAlertOrderSpecific(List.of(product), order);
+
+            // Handle quantitySold only if order is already COMPLETED
+            if (OrderStatus.COMPLETED.equals(order.getOrderStatus())) {
+                int currentQuantitySold = product.getQuantitySold() != null ? product.getQuantitySold() : 0;
+                product.setQuantitySold(currentQuantitySold + quantity);
+                productRepository.save(product);
+
+                log.info("Updated quantitySold for completed order. Product: {}, Added: {}, New total: {}",
+                        product.getName(), quantity, product.getQuantitySold());
+            }
+
             return createOrderItem(order, product, orderItemDto);
 
         } else if (OrderType.PURCHASE.equals(order.getOrderType())) {
-            // For inward orders, increase stock
+            // For purchase orders, increase stock
             ProductDto updatedProductDto = productService.increaseStockOfProduct(productId, quantity);
             if (updatedProductDto == null) {
                 throw new StockManagementException("Failed to increase stock for product ID: " + productId);
@@ -336,7 +386,6 @@ public class OrderItemServiceImpl implements OrderItemService {
         }
     }
 
-    // Enhanced createOrderItem method with null checks
     private OrderItem createOrderItem(Order order, Product product, OrderItemDto orderItemDto) {
         if (product == null) {
             throw new IllegalArgumentException("Product cannot be null when creating order item");
@@ -353,7 +402,7 @@ public class OrderItemServiceImpl implements OrderItemService {
 
         // Use price from DTO if provided, otherwise use product price
         Double priceToUse = orderItemDto.getPriceAtOrderTime() != null ?
-                orderItemDto.getPriceAtOrderTime() : product.getPrice();
+                orderItemDto.getPriceAtOrderTime() : product.getSellingPrice();
         orderItem.setPriceAtOrderTime(priceToUse);
 
         log.debug("Created order item with product ID: {} for order ID: {}",
@@ -383,7 +432,7 @@ public class OrderItemServiceImpl implements OrderItemService {
                 .mapToDouble(item -> {
                     double price = item.getPriceAtOrderTime() != null ?
                             item.getPriceAtOrderTime() :
-                            (item.getProduct() != null ? item.getProduct().getPrice() : 0.0);
+                            (item.getProduct() != null ? item.getProduct().getSellingPrice() : 0.0);
                     return price * item.getQuantity();
                 })
                 .sum();
@@ -391,8 +440,7 @@ public class OrderItemServiceImpl implements OrderItemService {
         order.setTotalPrice(total);
     }
 
-    // Fixed buildOrderResponseDto method with null product handling
-    OrderResponseDto buildOrderResponseDto(Order savedOrder) {
+    private OrderResponseDto buildOrderResponseDto(Order savedOrder) {
         log.info("Building Order Response, Order with Id: " + savedOrder.getId());
 
         List<OrderItemResponseDto> items = savedOrder.getOrderItems()
@@ -407,13 +455,15 @@ public class OrderItemServiceImpl implements OrderItemService {
                             .id(item.getId())
                             .productId(item.getProduct().getId())
                             .productName(item.getProduct().getName())
-                            .price(item.getProduct().getPrice())
+                            .price(item.getPriceAtOrderTime() != null ?
+                                    item.getPriceAtOrderTime() : item.getProduct().getSellingPrice())
                             .brand(item.getProduct().getBrandName())
                             .quantity(item.getQuantity())
-                            .totalPrice(item.getQuantity() * item.getProduct().getPrice())
+                            .totalPrice(item.getQuantity() * (item.getPriceAtOrderTime() != null ?
+                                    item.getPriceAtOrderTime() : item.getProduct().getSellingPrice()))
                             .build();
                 })
-                .filter(item -> item != null) // Remove null items
+                .filter(item -> item != null)
                 .toList();
 
         Double totalOrderPrice = items.stream()
@@ -422,18 +472,20 @@ public class OrderItemServiceImpl implements OrderItemService {
 
         return OrderResponseDto.builder()
                 .orderId(savedOrder.getId())
-                .customerId(savedOrder.getCustomer().getId())
-                .customerName(savedOrder.getCustomer().getName())
+                .customerId(savedOrder.getCustomer() != null ? savedOrder.getCustomer().getId() : null)
+                .customerName(savedOrder.getCustomer() != null ? savedOrder.getCustomer().getName() : null)
                 .totalPrice(totalOrderPrice)
                 .items(items)
                 .build();
     }
 
-//    @Override
-//    public OrderItem getOrderItemById(Long orderItemId) {
-//        return orderItemRepository.findById(orderItemId)
-//                .orElseThrow(()->
-//                        new ResourceNotFoundException("OrderItem not Found with id: "+orderItemId)
-//                );
-//    }
+    private OrderResponseDto buildEmptyOrderResponseDto(Order order) {
+        return OrderResponseDto.builder()
+                .orderId(order.getId())
+                .customerId(order.getCustomer() != null ? order.getCustomer().getId() : null)
+                .customerName(order.getCustomer() != null ? order.getCustomer().getName() : null)
+                .totalPrice(0.0)
+                .items(new ArrayList<>())
+                .build();
+    }
 }

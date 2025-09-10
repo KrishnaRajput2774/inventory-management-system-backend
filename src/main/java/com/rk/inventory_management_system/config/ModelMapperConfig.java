@@ -5,6 +5,9 @@ import com.rk.inventory_management_system.entities.Product;
 import org.modelmapper.ModelMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.MediaType;
+import org.springframework.web.servlet.config.annotation.ContentNegotiationConfigurer;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
 public class ModelMapperConfig {
@@ -12,19 +15,8 @@ public class ModelMapperConfig {
 
     @Bean
     public ModelMapper getModelMapper() {
-
-        ModelMapper modelMapper = new ModelMapper();
-//
-//        modelMapper.getConfiguration().setAmbiguityIgnored(true);
-//
-//        modelMapper.typeMap(ProductDto.class, Product.class)
-//                .addMappings(mapper->{
-//                    mapper.skip(Product::setId);
-//                    mapper.skip(Product::setSupplier);
-//                    mapper.skip(Product::setCategory);
-//                });
-
-        return modelMapper;
+        return new ModelMapper();
     }
 
 }
+

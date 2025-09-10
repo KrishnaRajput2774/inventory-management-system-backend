@@ -16,8 +16,11 @@ public interface OrderService {
 
     List<OrderDto> getAllOrdersOfCustomer(Long customerId);
 
+    List<OrderDto> getAllOrders();
+
     OrderDto getOrderById(Long orderId);
 
     List<Order> getOrdersByIds(List<Long> orderIds);
 
+    void updateOrderStatus(Long orderId, String orderStatus);
 }

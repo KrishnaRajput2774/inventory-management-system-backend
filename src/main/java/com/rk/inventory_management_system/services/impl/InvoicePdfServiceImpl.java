@@ -13,9 +13,11 @@ import java.awt.Color;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+
 
 @Service
 @RequiredArgsConstructor
@@ -25,63 +27,65 @@ public class InvoicePdfServiceImpl implements InvoicePdfService {
     private final OrderService orderService;
 
     // Company details
-    private static final String COMPANY_NAME = "Aashirwad Company";
-    private static final String COMPANY_ADDRESS = "123  XYZ Complex, Dondaicha";
+    private static final String COMPANY_NAME = "UJJWAL PREM AUTO PARTS AND OIL";
+    private static final String COMPANY_ADDRESS = "123 XYZ Complex, Dondaicha";
     private static final String COMPANY_CITY = "Dondaicha, Dhule, Maharashtra 400001";
-    private static final String COMPANY_PHONE = "Tel: +91-22-1234-5678";
+    private static final String COMPANY_PHONE = "+91-9322505058";
     private static final String COMPANY_EMAIL = "info@ashirwadcompany.com";
-    private static final String COMPANY_GST = "GST: 27XXXXX1234X1ZX";
+//    private static final String COMPANY_GST = "27XXXXX1234X1ZX";
+//    private static final String COMPANY_PAN = "ABCDE1234F";
+    private static final String COMPANY_WEBSITE = "www.ujjawalpremautoparts.com";
+
+    // Colors
+    private static final Color PRIMARY_COLOR = new Color(41, 128, 185);
+    private static final Color SECONDARY_COLOR = new Color(52, 73, 94);
+    private static final Color LIGHT_GRAY = new Color(245, 245, 245);
+    private static final Color BORDER_COLOR = new Color(189, 195, 199);
 
     @Override
     public ByteArrayInputStream generateInvoice(List<Long> orderIds) {
         List<Order> orders = orderService.getOrdersByIds(orderIds);
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a");
-        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy");
 
-        Document document = new Document(PageSize.A4, 36, 36, 54, 54);
+        // Reduced margins for more space
+        Document document = new Document(PageSize.A4, 25, 25, 25, 25);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
 
         try {
             PdfWriter writer = PdfWriter.getInstance(document, out);
             document.open();
 
-            // Add company header
-            addCompanyHeader(document);
+            // Generate invoice number
+            String invoiceNumber = generateInvoiceNumber(orderIds.getFirst());
 
-            // Add invoice info
-            addInvoiceInfo(document, dateFormatter);
+            // Add header with logo placeholder and company info
+            addEnhancedHeader(document, writer);
 
-            // Add some space
-            document.add(new Paragraph("\n"));
+            // Add invoice title and number
+            addInvoiceTitle(document, invoiceNumber);
 
-            BigDecimal grandTotal = BigDecimal.ZERO;
+            // Calculate totals
+            BigDecimal subtotal = BigDecimal.ZERO;
+            int totalItems = 0;
 
             for (Order order : orders) {
-                // Add order details section
-                addOrderDetailsSection(document, order, formatter);
-
-                // Add order items table
-                addOrderItemsTable(document, order);
-
-                // Add order total
-                addOrderTotal(document, order);
-
-                grandTotal = grandTotal.add(BigDecimal.valueOf(order.getTotalPrice()));
-
-                // Add separator between orders
-                if (orders.indexOf(order) < orders.size() - 1) {
-                    document.add(new Paragraph("\n"));
-                    addSeparator(document);
-                }
+                subtotal = subtotal.add(BigDecimal.valueOf(order.getTotalPrice()));
+                totalItems += order.getOrderItems().size();
             }
 
-            // Add grand total if multiple orders
-            if (orders.size() > 1) {
-                addGrandTotal(document, grandTotal);
-            }
+            // Add billing and shipping info in columns
+            addBillingShippingInfo(document, orders.get(0));
+
+            // Add compact items table
+            addCompactItemsTable(document, orders);
+
+            // Add summary section with calculations
+            addInvoiceSummary(document, subtotal, orders.get(0));
+
+            // Add payment info and terms
+            addPaymentAndTerms(document, orders.get(0));
 
             // Add footer
-            addInvoiceFooter(document);
+            addCompactFooter(document, writer);
 
             document.close();
 
@@ -93,178 +97,441 @@ public class InvoicePdfServiceImpl implements InvoicePdfService {
         return new ByteArrayInputStream(out.toByteArray());
     }
 
-    private void addCompanyHeader(Document document) throws DocumentException {
-        // Company name
-        Font companyNameFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 22, Color.DARK_GRAY);
-        Paragraph companyName = new Paragraph(COMPANY_NAME, companyNameFont);
-        companyName.setAlignment(Element.ALIGN_CENTER);
-        document.add(companyName);
-
-        // Company details
-        Font companyDetailsFont = FontFactory.getFont(FontFactory.HELVETICA, 10, Color.GRAY);
-        Paragraph companyDetails = new Paragraph(
-                COMPANY_ADDRESS + "\n" +
-                        COMPANY_CITY + "\n" +
-                        COMPANY_PHONE + " | " + COMPANY_EMAIL + "\n" +
-                        COMPANY_GST,
-                companyDetailsFont
-        );
-        companyDetails.setAlignment(Element.ALIGN_CENTER);
-        document.add(companyDetails);
-
-        // Add a line separator
-        document.add(new Paragraph("\n"));
-        addSeparator(document);
+    private String generateInvoiceNumber(Long orderId) {
+        LocalDateTime now = LocalDateTime.now();
+        return String.format("INV-%d%02d%02d-%04d",
+                now.getYear(), now.getMonthValue(), now.getDayOfMonth(),
+                (orderId));
     }
 
-    private void addInvoiceInfo(Document document, DateTimeFormatter dateFormatter) throws DocumentException {
-        Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, Color.BLACK);
-        Paragraph title = new Paragraph("INVOICE", titleFont);
-        title.setAlignment(Element.ALIGN_CENTER);
-        document.add(title);
+    private void addEnhancedHeader(Document document, PdfWriter writer) throws DocumentException {
+        PdfPTable headerTable = new PdfPTable(3); // Changed to 3 columns
+        headerTable.setWidthPercentage(100);
+        headerTable.setWidths(new float[]{2f, 1f, 1f}); // Adjusted widths
 
-        Font infoFont = FontFactory.getFont(FontFactory.HELVETICA, 10);
-        Paragraph invoiceInfo = new Paragraph(
-                "Invoice Date: " + LocalDateTime.now().format(dateFormatter) + "\n" +
-                        "Generated On: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a")),
-                infoFont
-        );
-        invoiceInfo.setAlignment(Element.ALIGN_RIGHT);
-        document.add(invoiceInfo);
-    }
-
-    private void addOrderDetailsSection(Document document, Order order, DateTimeFormatter formatter) throws DocumentException {
-        Font sectionFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12, Color.DARK_GRAY);
-        Paragraph orderSection = new Paragraph("ORDER DETAILS", sectionFont);
-        orderSection.setSpacingBefore(8f);
-        orderSection.setSpacingAfter(5f);
-        document.add(orderSection);
-
-        // Create a table for order details
-        PdfPTable orderDetailsTable = new PdfPTable(2);
-        orderDetailsTable.setWidthPercentage(100);
-        orderDetailsTable.setWidths(new float[]{1f, 1f});
-
-        Font labelFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9);
-        Font valueFont = FontFactory.getFont(FontFactory.HELVETICA, 9);
-
-        // Left column - Order info
+        // Left side - Company info
         PdfPCell leftCell = new PdfPCell();
         leftCell.setBorder(Rectangle.NO_BORDER);
-        leftCell.setPadding(4);
-        leftCell.addElement(new Paragraph("Order ID: " + order.getId(), labelFont));
-        leftCell.addElement(new Paragraph("Status: " + order.getOrderStatus(), valueFont));
-        leftCell.addElement(new Paragraph("Created: " + order.getCreatedAt().format(formatter), valueFont));
-        if (order.getCompletedAt() != null) {
-            leftCell.addElement(new Paragraph("Completed: " + order.getCompletedAt().format(formatter), valueFont));
-        }
+        leftCell.setPaddingBottom(10);
 
-        // Right column - Customer info
+        // Company name with style
+        Font companyFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, PRIMARY_COLOR);
+        Paragraph companyName = new Paragraph(COMPANY_NAME, companyFont);
+        leftCell.addElement(companyName);
+
+        // Company details
+        Font detailsFont = FontFactory.getFont(FontFactory.HELVETICA, 8, SECONDARY_COLOR);
+        Paragraph details = new Paragraph();
+        details.add(new Phrase(COMPANY_ADDRESS + "\n", detailsFont));
+        details.add(new Phrase(COMPANY_CITY + "\n", detailsFont));
+        details.add(new Phrase("Phone: " + COMPANY_PHONE + "\n", detailsFont));
+        details.add(new Phrase("Email: " + COMPANY_EMAIL + "\n", detailsFont));
+        details.add(new Phrase("Website: " + COMPANY_WEBSITE, detailsFont));
+        leftCell.addElement(details);
+
+        // Middle - INVOICE heading (centered)
+        PdfPCell middleCell = new PdfPCell();
+        middleCell.setBorder(Rectangle.NO_BORDER);
+        middleCell.setPaddingBottom(10);
+        middleCell.setHorizontalAlignment(Element.ALIGN_CENTER);
+
+        Font invoiceFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 20, PRIMARY_COLOR);
+        Paragraph invoiceTitle = new Paragraph("INVOICE", invoiceFont);
+        invoiceTitle.setAlignment(Element.ALIGN_CENTER);
+        middleCell.addElement(invoiceTitle);
+
+        // Right side - Can be used for additional info or logo
         PdfPCell rightCell = new PdfPCell();
         rightCell.setBorder(Rectangle.NO_BORDER);
-        rightCell.setPadding(4);
-        rightCell.addElement(new Paragraph("BILL TO:", labelFont));
-        rightCell.addElement(new Paragraph(order.getCustomer().getName(), valueFont));
+        rightCell.setPaddingBottom(10);
+        rightCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
 
-        orderDetailsTable.addCell(leftCell);
-        orderDetailsTable.addCell(rightCell);
-        orderDetailsTable.setSpacingAfter(5f);
-        document.add(orderDetailsTable);
+        // You can add logo or additional company info here if needed
+        Paragraph rightInfo = new Paragraph(" "); // Empty for now
+        rightCell.addElement(rightInfo);
+
+        headerTable.addCell(leftCell);
+        headerTable.addCell(middleCell);
+        headerTable.addCell(rightCell);
+        document.add(headerTable);
+
+        // Add a colored line
+        drawColoredLine(writer, document, PRIMARY_COLOR, 2f);
     }
 
-    private void addOrderItemsTable(Document document, Order order) throws DocumentException {
-        document.add(new Paragraph(" "));
 
-        // Items header
-        Font sectionFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12, Color.DARK_GRAY);
-        Paragraph itemsHeader = new Paragraph("ORDER ITEMS", sectionFont);
-        itemsHeader.setSpacingAfter(8f);
-        document.add(itemsHeader);
+    // Update the addInvoiceTitle method to remove the redundant "INVOICE" text from right side
+    private void addInvoiceTitle(Document document, String invoiceNumber) throws DocumentException {
+        PdfPTable titleTable = new PdfPTable(2);
+        titleTable.setWidthPercentage(100);
+        titleTable.setSpacingBefore(10);
+        titleTable.setSpacingAfter(10);
 
-        // Create items table
-        PdfPTable table = new PdfPTable(6);
+        Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, SECONDARY_COLOR);
+        Font valueFont = FontFactory.getFont(FontFactory.HELVETICA, 9);
+
+        // Invoice number
+        PdfPCell invoiceCell = new PdfPCell();
+        invoiceCell.setBorder(Rectangle.NO_BORDER);
+        Paragraph invoiceP = new Paragraph();
+        invoiceP.add(new Phrase("Invoice No: ", titleFont));
+        invoiceP.add(new Phrase(invoiceNumber, valueFont));
+        invoiceCell.addElement(invoiceP);
+
+        // Date
+        PdfPCell dateCell = new PdfPCell();
+        dateCell.setBorder(Rectangle.NO_BORDER);
+        dateCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        Paragraph dateP = new Paragraph();
+        dateP.setAlignment(Element.ALIGN_RIGHT);
+        dateP.add(new Phrase("Date: ", titleFont));
+        dateP.add(new Phrase(LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy")), valueFont));
+        dateCell.addElement(dateP);
+
+        titleTable.addCell(invoiceCell);
+        titleTable.addCell(dateCell);
+        document.add(titleTable);
+    }
+
+    private void addBillingShippingInfo(Document document, Order order) throws DocumentException {
+        PdfPTable infoTable = new PdfPTable(3);
+        infoTable.setWidthPercentage(100);
+        infoTable.setWidths(new float[]{1f, 1f, 1f});
+        infoTable.setSpacingAfter(10);
+
+        Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8, Color.WHITE);
+        Font labelFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 7, SECONDARY_COLOR);
+        Font valueFont = FontFactory.getFont(FontFactory.HELVETICA, 7);
+
+        // Bill To
+        PdfPCell billToHeader = new PdfPCell(new Phrase("BILL TO", headerFont));
+        billToHeader.setBackgroundColor(PRIMARY_COLOR);
+        billToHeader.setPadding(4);
+        billToHeader.setBorderColor(PRIMARY_COLOR);
+
+        PdfPCell billToContent = new PdfPCell();
+        billToContent.setPadding(5);
+        billToContent.setBorderColor(BORDER_COLOR);
+        billToContent.setBackgroundColor(LIGHT_GRAY);
+
+        Paragraph billInfo = new Paragraph();
+        billInfo.add(new Phrase(order.getCustomer().getName() + "\n", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8)));
+        if (order.getCustomer().getAddress() != null) {
+            billInfo.add(new Phrase(order.getCustomer().getAddress() + "\n", valueFont));
+        }
+        billInfo.add(new Phrase("Phone: " + order.getCustomer().getContactNumber() + "\n", valueFont));
+        if (order.getCustomer().getEmail() != null) {
+            billInfo.add(new Phrase("Email: " + order.getCustomer().getEmail(), valueFont));
+        }
+        billToContent.addElement(billInfo);
+
+        // Ship To (same as Bill To for now)
+        PdfPCell shipToHeader = new PdfPCell(new Phrase("SHIP TO", headerFont));
+        shipToHeader.setBackgroundColor(PRIMARY_COLOR);
+        shipToHeader.setPadding(4);
+        shipToHeader.setBorderColor(PRIMARY_COLOR);
+
+        PdfPCell shipToContent = new PdfPCell();
+        shipToContent.setPadding(5);
+        shipToContent.setBorderColor(BORDER_COLOR);
+        shipToContent.setBackgroundColor(LIGHT_GRAY);
+        shipToContent.addElement(billInfo);
+
+        // Order Details
+        PdfPCell orderHeader = new PdfPCell(new Phrase("ORDER DETAILS", headerFont));
+        orderHeader.setBackgroundColor(PRIMARY_COLOR);
+        orderHeader.setPadding(4);
+        orderHeader.setBorderColor(PRIMARY_COLOR);
+
+        PdfPCell orderContent = new PdfPCell();
+        orderContent.setPadding(5);
+        orderContent.setBorderColor(BORDER_COLOR);
+        orderContent.setBackgroundColor(LIGHT_GRAY);
+
+        Paragraph orderInfo = new Paragraph();
+        orderInfo.add(new Phrase("Order ID: ", labelFont));
+        orderInfo.add(new Phrase("#" + order.getId() + "\n", valueFont));
+        orderInfo.add(new Phrase("Order Date: ", labelFont));
+        orderInfo.add(new Phrase(order.getCreatedAt().format(DateTimeFormatter.ofPattern("dd-MM-yyyy")) + "\n", valueFont));
+        orderInfo.add(new Phrase("Status: ", labelFont));
+        orderInfo.add(new Phrase(order.getOrderStatus().toString() + "\n", valueFont));
+        orderInfo.add(new Phrase("Payment: ", labelFont));
+        orderInfo.add(new Phrase(order.getPaymentType().toString(), valueFont));
+        orderContent.addElement(orderInfo);
+
+        // Add headers
+        infoTable.addCell(billToHeader);
+        infoTable.addCell(shipToHeader);
+        infoTable.addCell(orderHeader);
+
+        // Add content
+        infoTable.addCell(billToContent);
+        infoTable.addCell(shipToContent);
+        infoTable.addCell(orderContent);
+
+        document.add(infoTable);
+    }
+
+    private void addCompactItemsTable(Document document, List<Order> orders) throws DocumentException {
+        // Items header with background
+        PdfPTable headerTable = new PdfPTable(1);
+        headerTable.setWidthPercentage(100);
+        headerTable.setSpacingBefore(5);
+
+        PdfPCell headerCell = new PdfPCell(new Phrase("ITEM DETAILS",
+                FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8, Color.WHITE)));
+        headerCell.setBackgroundColor(SECONDARY_COLOR);
+        headerCell.setPadding(4);
+        headerCell.setBorderColor(SECONDARY_COLOR);
+        headerTable.addCell(headerCell);
+        document.add(headerTable);
+
+        // Items table
+        PdfPTable table = new PdfPTable(8);
         table.setWidthPercentage(100);
-        table.setWidths(new float[]{3f, 2f, 2f, 1f, 1.5f, 1.5f});
+        table.setWidths(new float[]{0.5f, 2.5f, 1.5f, 1f, 0.8f, 1f, 1f, 1.2f});
 
-        Font headFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, Color.WHITE);
-        Color headerColor = new Color(70, 130, 180); // Steel blue
+        Font headFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 7, SECONDARY_COLOR);
+        Font cellFont = FontFactory.getFont(FontFactory.HELVETICA, 7);
 
-        // Add header cells
-        String[] headers = {"Product", "Category", "Brand", "Qty", "Price (₹)", "Total (₹)"};
+        // Table headers
+        String[] headers = {"#", "Item Description", "Code", "Brand", "Qty", "Rate", "Disc%", "Amount"};
         for (String header : headers) {
             PdfPCell hCell = new PdfPCell(new Phrase(header, headFont));
-            hCell.setBackgroundColor(headerColor);
-            hCell.setPadding(8);
-            hCell.setHorizontalAlignment(Element.ALIGN_CENTER);
+            hCell.setBackgroundColor(LIGHT_GRAY);
+            hCell.setPadding(3);
+            hCell.setBorderColor(BORDER_COLOR);
+            hCell.setHorizontalAlignment(header.equals("Item Description") ? Element.ALIGN_LEFT : Element.ALIGN_CENTER);
             table.addCell(hCell);
         }
 
-        Font cellFont = FontFactory.getFont(FontFactory.HELVETICA, 9);
+        // Add items
+        int itemNo = 1;
+        for (Order order : orders) {
+            for (var item : order.getOrderItems()) {
+                BigDecimal rate = BigDecimal.valueOf(item.getProduct().getSellingPrice());
+                BigDecimal qty = BigDecimal.valueOf(item.getQuantity());
+                BigDecimal discount = item.getProduct().getDiscount() != null ?
+                        BigDecimal.valueOf(item.getProduct().getDiscount()) : BigDecimal.ZERO;
+                BigDecimal amount = rate.multiply(qty).multiply(BigDecimal.ONE.subtract(discount.divide(BigDecimal.valueOf(100))));
 
-        // Add data rows
-        order.getOrderItems().forEach(orderItem -> {
-            BigDecimal itemTotal = BigDecimal.valueOf(orderItem.getProduct().getPrice()).multiply(new BigDecimal(orderItem.getQuantity()));
+                PdfPCell[] cells = {
+                        new PdfPCell(new Phrase(String.valueOf(itemNo++), cellFont)),
+                        new PdfPCell(new Phrase(item.getProduct().getName() +
+                                (item.getProduct().getAttribute() != null ? " - " + item.getProduct().getAttribute() : ""), cellFont)),
+                        new PdfPCell(new Phrase(item.getProduct().getProductCode(), cellFont)),
+                        new PdfPCell(new Phrase(item.getProduct().getBrandName(), cellFont)),
+                        new PdfPCell(new Phrase(qty.toString(), cellFont)),
+                        new PdfPCell(new Phrase("₹" + rate.setScale(2, RoundingMode.HALF_UP), cellFont)),
+                        new PdfPCell(new Phrase(discount + "%", cellFont)),
+                        new PdfPCell(new Phrase("₹" + amount.setScale(2, RoundingMode.HALF_UP), cellFont))
+                };
 
-            PdfPCell[] cells = {
-                    new PdfPCell(new Phrase(orderItem.getProduct().getName(), cellFont)),
-                    new PdfPCell(new Phrase(orderItem.getProduct().getCategory().getName(), cellFont)),
-                    new PdfPCell(new Phrase(orderItem.getProduct().getBrandName(), cellFont)),
-                    new PdfPCell(new Phrase(orderItem.getQuantity().toString(), cellFont)),
-                    new PdfPCell(new Phrase("₹" + orderItem.getProduct().getPrice().toString(), cellFont)),
-                    new PdfPCell(new Phrase("₹" + itemTotal.toString(), cellFont))
-            };
-
-            for (int i = 0; i < cells.length; i++) {
-                cells[i].setPadding(6);
-                if (i >= 3) { // Right align quantity, price, and total columns
-                    cells[i].setHorizontalAlignment(Element.ALIGN_RIGHT);
+                for (int i = 0; i < cells.length; i++) {
+                    cells[i].setPadding(3);
+                    cells[i].setBorderColor(BORDER_COLOR);
+                    if (i == 1) {
+                        cells[i].setHorizontalAlignment(Element.ALIGN_LEFT);
+                    } else if (i >= 4) {
+                        cells[i].setHorizontalAlignment(Element.ALIGN_RIGHT);
+                    } else {
+                        cells[i].setHorizontalAlignment(Element.ALIGN_CENTER);
+                    }
+                    table.addCell(cells[i]);
                 }
-                table.addCell(cells[i]);
             }
-        });
+        }
 
         document.add(table);
     }
 
-    private void addOrderTotal(Document document, Order order) throws DocumentException {
-        Font totalFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11);
-        Paragraph total = new Paragraph("Order Total: ₹" + String.format("%.2f", order.getTotalPrice()), totalFont);
-        total.setAlignment(Element.ALIGN_RIGHT);
-        total.setSpacingBefore(5f);
-        total.setSpacingAfter(5f);
-        document.add(total);
+    private void addInvoiceSummary(Document document, BigDecimal subtotal, Order order) throws DocumentException {
+        PdfPTable summaryTable = new PdfPTable(2);
+        summaryTable.setWidthPercentage(40);
+        summaryTable.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        summaryTable.setSpacingBefore(10);
+
+        Font labelFont = FontFactory.getFont(FontFactory.HELVETICA, 7, SECONDARY_COLOR);
+        Font valueFont = FontFactory.getFont(FontFactory.HELVETICA, 7);
+        Font totalFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8, PRIMARY_COLOR);
+
+        BigDecimal grandTotal = subtotal;
+
+        // Discount if any
+        if (order.getOrderItems().stream().anyMatch(i -> i.getProduct().getDiscount() != null && i.getProduct().getDiscount() > 0)) {
+            BigDecimal totalDiscount = calculateTotalDiscount(order);
+            addSummaryRow(summaryTable, "Total Discount:", "-₹" + totalDiscount.setScale(2, RoundingMode.HALF_UP), labelFont, valueFont);
+        }
+
+        // Grand Total with colored background
+        PdfPCell totalLabelCell = new PdfPCell(new Phrase("GRAND TOTAL:", totalFont));
+        totalLabelCell.setBackgroundColor(LIGHT_GRAY);
+        totalLabelCell.setPadding(5);
+        totalLabelCell.setBorderColor(PRIMARY_COLOR);
+        totalLabelCell.setBorderWidth(1.5f);
+
+        PdfPCell totalValueCell = new PdfPCell(new Phrase("₹" + grandTotal.setScale(2, RoundingMode.HALF_UP), totalFont));
+        totalValueCell.setBackgroundColor(LIGHT_GRAY);
+        totalValueCell.setPadding(5);
+        totalValueCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        totalValueCell.setBorderColor(PRIMARY_COLOR);
+        totalValueCell.setBorderWidth(1.5f);
+
+        summaryTable.addCell(totalLabelCell);
+        summaryTable.addCell(totalValueCell);
+
+        document.add(summaryTable);
+
+        // Amount in words - positioned below grand total with proper alignment
+        PdfPTable amountWordsTable = new PdfPTable(1);
+        amountWordsTable.setWidthPercentage(100);
+        amountWordsTable.setSpacingBefore(5);
+        amountWordsTable.setSpacingAfter(10);
+
+        Font wordsFont = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 7, SECONDARY_COLOR);
+        String amountInWords = convertToWords(grandTotal);
+
+        PdfPCell wordsCell = new PdfPCell();
+        wordsCell.setBorder(Rectangle.NO_BORDER);
+        wordsCell.setPadding(3);
+
+        // Create paragraph with proper text wrapping
+        Paragraph amountInWordsPara = new Paragraph();
+        amountInWordsPara.add(new Phrase("Amount in words: " + amountInWords, wordsFont));
+        amountInWordsPara.setAlignment(Element.ALIGN_LEFT);
+
+        wordsCell.addElement(amountInWordsPara);
+        amountWordsTable.addCell(wordsCell);
+
+        document.add(amountWordsTable);
     }
 
-    private void addGrandTotal(Document document, BigDecimal grandTotal) throws DocumentException {
-        document.add(new Paragraph("\n"));
-        addSeparator(document);
+    private void addSummaryRow(PdfPTable table, String label, String value, Font labelFont, Font valueFont) {
+        PdfPCell labelCell = new PdfPCell(new Phrase(label, labelFont));
+        labelCell.setBorder(Rectangle.NO_BORDER);
+        labelCell.setPadding(2);
 
-        Font grandTotalFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 14, Color.DARK_GRAY);
-        Paragraph grandTotalPara = new Paragraph("GRAND TOTAL: ₹" + grandTotal, grandTotalFont);
-        grandTotalPara.setAlignment(Element.ALIGN_RIGHT);
-        grandTotalPara.setSpacingBefore(10f);
-        document.add(grandTotalPara);
+        PdfPCell valueCell = new PdfPCell(new Phrase(value, valueFont));
+        valueCell.setBorder(Rectangle.NO_BORDER);
+        valueCell.setPadding(2);
+        valueCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
+
+        table.addCell(labelCell);
+        table.addCell(valueCell);
     }
 
-    private void addSeparator(Document document) throws DocumentException {
-        Paragraph separator = new Paragraph("_".repeat(75));
-        separator.setAlignment(Element.ALIGN_CENTER);
-        separator.setSpacingBefore(5f);
-        separator.setSpacingAfter(5f);
-        document.add(separator);
+    private BigDecimal calculateTotalDiscount(Order order) {
+        BigDecimal totalDiscount = BigDecimal.ZERO;
+        for (var item : order.getOrderItems()) {
+            if (item.getProduct().getDiscount() != null && item.getProduct().getDiscount() > 0) {
+                BigDecimal itemPrice = BigDecimal.valueOf(item.getProduct().getSellingPrice())
+                        .multiply(BigDecimal.valueOf(item.getQuantity()));
+                BigDecimal discount = itemPrice.multiply(BigDecimal.valueOf(item.getProduct().getDiscount()))
+                        .divide(BigDecimal.valueOf(100));
+                totalDiscount = totalDiscount.add(discount);
+            }
+        }
+        return totalDiscount;
     }
 
-    private void addInvoiceFooter(Document document) throws DocumentException {
-        document.add(new Paragraph("\n\n"));
+    private void addPaymentAndTerms(Document document, Order order) throws DocumentException {
+        PdfPTable termsTable = new PdfPTable(1);
+        termsTable.setWidthPercentage(100);
+        termsTable.setSpacingBefore(15);
 
-        Font footerFont = FontFactory.getFont(FontFactory.HELVETICA, 10, Color.GRAY);
-        Paragraph footer = new Paragraph(
-                "Thank you for your business!\n" +
-                        "For any queries, please contact us at " + COMPANY_PHONE + " or " + COMPANY_EMAIL + "\n" +
-                        "This is a computer generated invoice.",
-                footerFont
-        );
+        // Bank Details
+//        PdfPCell bankCell = new PdfPCell();
+//        bankCell.setBorderColor(BORDER_COLOR);
+//        bankCell.setPadding(5);
+//        bankCell.setBackgroundColor(LIGHT_GRAY);
+
+        Font headerFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 7, SECONDARY_COLOR);
+        Font detailFont = FontFactory.getFont(FontFactory.HELVETICA, 6);
+
+//        Paragraph bankDetails = new Paragraph();
+//        bankDetails.add(new Phrase("BANK DETAILS\n", headerFont));
+//        bankDetails.add(new Phrase("Bank Name: State Bank of India\n", detailFont));
+//        bankDetails.add(new Phrase("Account No: 1234567890\n", detailFont));
+//        bankDetails.add(new Phrase("IFSC Code: SBIN0001234\n", detailFont));
+//        bankDetails.add(new Phrase("Branch: Dondaicha", detailFont));
+//        bankCell.addElement(bankDetails);
+
+        // Terms & Conditions
+        PdfPCell termsCell = new PdfPCell();
+        termsCell.setBorderColor(BORDER_COLOR);
+        termsCell.setPadding(5);
+        termsCell.setBackgroundColor(LIGHT_GRAY);
+
+        Paragraph terms = new Paragraph();
+        terms.add(new Phrase("TERMS & CONDITIONS\n", headerFont));
+        terms.add(new Phrase("• Goods once sold will not be taken back\n", detailFont));
+//        terms.add(new Phrase("• Interest @18% p.a. will be charged on delayed payments\n", detailFont));
+//        terms.add(new Phrase("• Subject to local jurisdiction\n", detailFont));
+        terms.add(new Phrase("• E. & O.E.", detailFont));
+        termsCell.addElement(terms);
+
+//        termsTable.addCell(bankCell);
+        termsTable.addCell(termsCell);
+        document.add(termsTable);
+    }
+
+    private void addCompactFooter(Document document, PdfWriter writer) throws DocumentException {
+        // Signature section
+        PdfPTable signTable = new PdfPTable(2);
+        signTable.setWidthPercentage(100);
+        signTable.setSpacingBefore(20);
+
+        Font signFont = FontFactory.getFont(FontFactory.HELVETICA, 7, SECONDARY_COLOR);
+
+        PdfPCell receiverSign = new PdfPCell();
+        receiverSign.setBorder(Rectangle.TOP);
+        receiverSign.setBorderColor(BORDER_COLOR);
+        receiverSign.setPaddingTop(5);
+        Paragraph receiverP = new Paragraph("Receiver's Signature", signFont);
+        receiverP.setAlignment(Element.ALIGN_CENTER);
+        receiverSign.addElement(receiverP);
+
+        PdfPCell authSign = new PdfPCell();
+        authSign.setBorder(Rectangle.TOP);
+        authSign.setBorderColor(BORDER_COLOR);
+        authSign.setPaddingTop(5);
+        Paragraph authP = new Paragraph("Authorized Signature", signFont);
+        authP.setAlignment(Element.ALIGN_CENTER);
+        authSign.addElement(authP);
+
+        signTable.addCell(receiverSign);
+        signTable.addCell(authSign);
+        document.add(signTable);
+
+        // Footer text
+        Font footerFont = FontFactory.getFont(FontFactory.HELVETICA, 6, Color.GRAY);
+        Paragraph footer = new Paragraph();
         footer.setAlignment(Element.ALIGN_CENTER);
+        footer.setSpacingBefore(10);
+        footer.add(new Phrase("This is a computer generated invoice and does not require physical signature\n", footerFont));
+        footer.add(new Phrase("Thank you for your business!", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 7, PRIMARY_COLOR)));
         document.add(footer);
+    }
+
+    private void drawColoredLine(PdfWriter writer, Document document, Color color, float thickness) {
+        PdfContentByte canvas = writer.getDirectContent();
+        canvas.setColorStroke(color);
+        canvas.setLineWidth(thickness);
+        canvas.moveTo(document.left(), writer.getVerticalPosition(false));
+        canvas.lineTo(document.right(), writer.getVerticalPosition(false));
+        canvas.stroke();
+    }
+
+    private String convertToWords(BigDecimal amount) {
+        // Simple implementation - you can use a library for better conversion
+        long number = amount.longValue();
+        if (number == 0) return "Zero Rupees Only";
+
+        String[] units = {"", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"};
+        String[] teens = {"Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"};
+        String[] tens = {"", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"};
+
+        // Simple conversion for demonstration - enhance as needed
+        return "Rupees " + String.format("%.0f", amount.doubleValue()) + " Only";
     }
 }

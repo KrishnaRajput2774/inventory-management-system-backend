@@ -1,8 +1,11 @@
 package com.rk.inventory_management_system.services.impl;
 
 import com.rk.inventory_management_system.dtos.ProductDto;
+import com.rk.inventory_management_system.dtos.ProductDtos.ProductResponseDto;
+import com.rk.inventory_management_system.dtos.ProductDtos.ProductSupplierResponseDto;
 import com.rk.inventory_management_system.dtos.ProductStockDetailsDto;
 import com.rk.inventory_management_system.dtos.ProductStockResponseDto;
+import com.rk.inventory_management_system.dtos.SupplierDto;
 import com.rk.inventory_management_system.entities.Product;
 import com.rk.inventory_management_system.entities.ProductCategory;
 import com.rk.inventory_management_system.entities.Supplier;
@@ -19,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -35,7 +39,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
-    public ProductDto createProduct(ProductDto productDto) {
+    public ProductResponseDto createProduct(ProductDto productDto) {
 
         log.info("Inside Add Product");
         Supplier supplier = supplierService.
@@ -67,9 +71,14 @@ public class ProductServiceImpl implements ProductService {
             log.info("Creating Product");
             product = new Product();
             product.setName(productDto.getName());
+            product.setAttribute(productDto.getAttribute());
+            product.setDescription(productDto.getDescription());
             product.setBrandName(productDto.getBrandName());
-            product.setPrice(productDto.getPrice());
+            product.setActualPrice(productDto.getActualPrice());
+            product.setSellingPrice(productDto.getSellingPrice());
             product.setStockQuantity(productDto.getStockQuantity());
+            product.setQuantitySold(productDto.getQuantitySold());
+            product.setLowStockThreshold(productDto.getLowStockThreshold() == 0 ? 10:productDto.getLowStockThreshold());
 
             // --- Set relationships manually ---
             product.setSupplier(supplier);
@@ -78,29 +87,54 @@ public class ProductServiceImpl implements ProductService {
             category.getProducts().add(product);
         }
 
-        // category will be automatically saved because product is owning side
-        return modelMapper.map(productRepository.save(product), ProductDto.class);
+        Product savedProduct = productRepository.save(product);
+        ProductResponseDto mappedDto =  modelMapper.map(savedProduct, ProductResponseDto.class);
+        mappedDto.setSupplier(ProductSupplierResponseDto.builder()
+                        .productsCount(supplier.getProducts().size())
+                        .address(supplier.getAddress())
+                        .email(supplier.getEmail())
+                        .name(supplier.getName())
+                        .contactNumber(supplier.getContactNumber())
+                        .id(supplier.getId())
+                .build());
+
+        return mappedDto;
     }
 
     @Override
-    public ProductDto getProductById(Long productId) {
+    public ProductResponseDto getProductById(Long productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() ->
                         new ResourceNotFoundException(
                                 "Product Not Found in Inventory with id: " + productId));
 
-        return modelMapper.map(product, ProductDto.class);
+        return modelMapper.map(product, ProductResponseDto.class);
     }
 
     @Override
     public List<ProductDto> getAllProducts() {
 
         List<Product> products = productRepository.findAll();
-        return products
-                .stream()
-                .map((product) ->
-                        modelMapper.map(product, ProductDto.class))
-                .collect(Collectors.toList());
+        return products.stream().map(product -> {
+            ProductDto dto = modelMapper.map(product, ProductDto.class);
+
+            // Manually set supplier if available
+            if (product.getSupplier() != null) {
+                ProductSupplierResponseDto supplierDto = ProductSupplierResponseDto.builder()
+                        .id(product.getSupplier().getId())
+                        .name(product.getSupplier().getName())
+                        .email(product.getSupplier().getEmail())
+                        .contactNumber(product.getSupplier().getEmail())
+                        .address(product.getSupplier().getAddress())
+                        .createdAt(product.getSupplier().getCreatedAt())
+                        .productsCount(product.getSupplier().getProducts().size())
+                        .build();
+                dto.setSupplier(supplierDto);
+
+
+            }
+            return dto;
+        }).collect(Collectors.toList());
     }
 
 
@@ -126,7 +160,9 @@ public class ProductServiceImpl implements ProductService {
         List<ProductStockDetailsDto> stockDetailsDtos = products.stream().map(product1 ->
                 ProductStockDetailsDto.builder()
                         .productId(product1.getId())
+                        .quantitySold(product.getQuantitySold())
                         .stockQuantity(product1.getStockQuantity())
+                        .lowStockThreshold(product1.getLowStockThreshold())
                         .supplierId(product1.getSupplier().getId())
                         .supplierName(product1.getSupplier().getName())
                         .build()).toList();
@@ -186,6 +222,7 @@ public class ProductServiceImpl implements ProductService {
 //        Product updatedProduct = updateStock(product, -(quantityToReduce));
 
         int remainingStock = quantityToReduce;
+        List<Product> updatedProducts = new ArrayList<>();
         for (Product p : products) {
 
             if (remainingStock <= 0) break;
@@ -197,6 +234,7 @@ public class ProductServiceImpl implements ProductService {
 
             p.setStockQuantity(currentProductStock - deduction);
             productRepository.save(p);
+            updatedProducts.add(p);
 
             log.info("Reduced {} units from supplier {}. Remaining: {}",
                     deduction, p.getSupplier().getName(), p.getStockQuantity());
@@ -204,7 +242,7 @@ public class ProductServiceImpl implements ProductService {
             remainingStock -= deduction;
         }
 
-        return products.stream().map(product1 ->
+        return updatedProducts.stream().map(product1 ->
                         modelMapper.map(product1, ProductDto.class))
                 .toList();
     }
@@ -224,6 +262,12 @@ public class ProductServiceImpl implements ProductService {
     @Override
     public List<Product> findProductByNameAndBrandName(String name, String brandName) {
         return productRepository.findByNameAndBrandName(name, brandName);
+    }
+
+    @Override
+    public void saveAll(List<Product> products) {
+        if( products!=null)
+            productRepository.saveAll(products);
     }
 
 

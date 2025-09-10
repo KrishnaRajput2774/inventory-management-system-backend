@@ -1,8 +1,11 @@
 package com.rk.inventory_management_system.dtos;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.rk.inventory_management_system.entities.Order;
 import lombok.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Getter
@@ -10,6 +13,7 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+// ---- CustomerDto ----
 public class CustomerDto {
 
     private Long customerId;
@@ -18,5 +22,6 @@ public class CustomerDto {
     private String email;
     private String address;
     private List<OrderDto> orders;
+    private LocalDateTime createdAt;
 
 }

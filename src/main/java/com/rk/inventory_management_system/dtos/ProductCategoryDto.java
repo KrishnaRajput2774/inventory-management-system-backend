@@ -2,6 +2,8 @@
 
     import lombok.*;
 
+    import java.time.LocalDate;
+
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
@@ -11,4 +13,7 @@
 
         private Long id;
         private String name;
+        private LocalDate createdDate;
+        private String description;
+
     }

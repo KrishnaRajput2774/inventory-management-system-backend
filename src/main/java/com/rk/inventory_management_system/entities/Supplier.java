@@ -3,7 +3,10 @@ package com.rk.inventory_management_system.entities;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 
@@ -30,4 +33,7 @@ public class Supplier {
     @OneToMany(mappedBy = "supplier", cascade = CascadeType.ALL)
     @JsonManagedReference
     private List<Product> products;
+
+    @CreationTimestamp
+    private LocalDateTime createdAt;
 }

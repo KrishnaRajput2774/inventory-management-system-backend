@@ -2,6 +2,7 @@ package com.rk.inventory_management_system.controllers;
 
 
 import com.rk.inventory_management_system.dtos.ProductDto;
+import com.rk.inventory_management_system.dtos.ProductDtos.ProductResponseDto;
 import com.rk.inventory_management_system.dtos.ProductStockResponseDto;
 import com.rk.inventory_management_system.services.ProductService;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +20,7 @@ public class ProductController {
 
 
     @PostMapping("/create")
-    public ResponseEntity<ProductDto> createProduct(@RequestBody ProductDto productDto) {
+    public ResponseEntity<ProductResponseDto> createProduct(@RequestBody ProductDto productDto) {
         return ResponseEntity.ok(productService.createProduct(productDto));
     }
 
@@ -29,7 +30,7 @@ public class ProductController {
     }
 
     @GetMapping("/{productId}")
-    public ResponseEntity<ProductDto> getProductById(@PathVariable Long productId) {
+    public ResponseEntity<ProductResponseDto> getProductById(@PathVariable Long productId) {
         return ResponseEntity.ok(productService.getProductById(productId));
     }
 
@@ -53,5 +54,4 @@ public class ProductController {
 
         return ResponseEntity.ok(productService.reduceStockOfProduct(productId, quantityToReduce));
     }
-
 }

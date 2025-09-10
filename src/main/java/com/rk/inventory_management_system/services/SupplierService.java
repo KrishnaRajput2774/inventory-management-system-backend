@@ -2,6 +2,8 @@ package com.rk.inventory_management_system.services;
 
 import com.rk.inventory_management_system.dtos.ProductDto;
 import com.rk.inventory_management_system.dtos.SupplierDto;
+import com.rk.inventory_management_system.dtos.supplierDtos.SupplierProductsResponseDto;
+import com.rk.inventory_management_system.dtos.supplierDtos.SupplierResponseDto;
 import com.rk.inventory_management_system.entities.Supplier;
 
 import java.util.List;
@@ -13,9 +15,9 @@ public interface SupplierService {
 
     SupplierDto deleteSupplier(Long supplierId);
 
-    List<ProductDto> getAllProductsOfSupplier(Long supplierId);
+    List<SupplierProductsResponseDto> getAllProductsOfSupplier(Long supplierId);
 
-    List<SupplierDto> getAllSuppliers();
+    List<SupplierResponseDto> getAllSuppliers();
 
     Supplier getSupplier(String email, String contact_number);
 

@@ -2,6 +2,8 @@ package com.rk.inventory_management_system.services.impl;
 
 import com.rk.inventory_management_system.dtos.ProductDto;
 import com.rk.inventory_management_system.dtos.SupplierDto;
+import com.rk.inventory_management_system.dtos.supplierDtos.SupplierProductsResponseDto;
+import com.rk.inventory_management_system.dtos.supplierDtos.SupplierResponseDto;
 import com.rk.inventory_management_system.entities.Product;
 import com.rk.inventory_management_system.entities.Supplier;
 import com.rk.inventory_management_system.exceptions.ResourceNotFoundException;
@@ -14,6 +16,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -44,6 +48,7 @@ public class SupplierServiceImpl implements SupplierService {
                 .address(supplierDto.getAddress())
                 .email(supplierDto.getEmail())
                 .contactNumber(supplierDto.getContactNumber())
+                .createdAt(LocalDateTime.now())
                 .build();
 
         List<ProductDto> productsDto = supplierDto.getProducts();
@@ -76,7 +81,7 @@ public class SupplierServiceImpl implements SupplierService {
 
     @Override
     @Transactional
-    public List<ProductDto> getAllProductsOfSupplier(Long supplierId) {
+    public List<SupplierProductsResponseDto> getAllProductsOfSupplier(Long supplierId) {
 
         Supplier supplier = supplierRepository.findById(supplierId)
                 .orElseThrow(()->
@@ -88,17 +93,23 @@ public class SupplierServiceImpl implements SupplierService {
 
         return products.stream()
                 .map(product ->
-                        modelMapper.map(product, ProductDto.class))
+                        modelMapper.map(product, SupplierProductsResponseDto.class))
                 .toList();
     }
 
     @Override
-    public List<SupplierDto> getAllSuppliers() {
+    public List<SupplierResponseDto> getAllSuppliers() {
 
         List<Supplier> suppliers = supplierRepository.findAll();
         return suppliers.stream()
-                .map((supplier) -> modelMapper.map(supplier, SupplierDto.class))
-                .toList();
+                .map(supplier -> {
+                    SupplierResponseDto dto = modelMapper.map(supplier, SupplierResponseDto.class);
+                    dto.setProducts(supplier.getProducts().stream().map((element) -> modelMapper.map(element, SupplierProductsResponseDto.class)).collect(Collectors.toList()));
+                    dto.setProductsCount(supplier.getProducts().size());
+                    return dto;
+                })
+                .collect(Collectors.toList());
+
     }
 
     @Override

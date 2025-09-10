@@ -23,7 +23,7 @@ public class ProductCategoryController {
         return ResponseEntity.ok(productCategoryService.createProductCategory(categoryDto));
     }
 
-    @DeleteMapping("/{categoryId}")
+    @DeleteMapping("/{categoryId}/delete")
     public ResponseEntity<ProductCategoryDto> deleteProductCategory(@PathVariable Long categoryId) {
         return ResponseEntity.ok(productCategoryService.deleteProductCategory(categoryId));
     }

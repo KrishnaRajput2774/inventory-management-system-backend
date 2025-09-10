@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -35,8 +36,9 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
         if (category != null) {
             throw new RuntimeConflictException("Category Already Present with id: " + category.getId());
         }
-
         categoryDto.setId(null);
+        categoryDto.setCreatedDate(LocalDate.now());
+
         ProductCategory savedProductCategory = productCategoryRepository.save(modelMapper.map(categoryDto, ProductCategory.class));
         return modelMapper.map(savedProductCategory, ProductCategoryDto.class);
     }

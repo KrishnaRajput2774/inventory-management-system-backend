@@ -1,6 +1,8 @@
 package com.rk.inventory_management_system.dtos;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.rk.inventory_management_system.dtos.ProductDtos.ProductSupplierResponseDto;
 import com.rk.inventory_management_system.entities.ProductCategory;
 import com.rk.inventory_management_system.entities.Supplier;
 import jakarta.persistence.ManyToOne;
@@ -15,13 +17,18 @@ import lombok.*;
 public class ProductDto {
 
     private Long productId;
+    private String productCode;
+    private String attribute;
     private String name;
-    private Double price;
+    private String description;
+    private Double actualPrice;
+    private Double sellingPrice;
     private Double discount;
     private Integer stockQuantity;
+    private Integer quantitySold;
+    private int lowStockThreshold;
     private ProductCategoryDto category;
-    @JsonBackReference
-    private SupplierDto supplier;
+    private ProductSupplierResponseDto supplier;
     private String brandName;
 
 }

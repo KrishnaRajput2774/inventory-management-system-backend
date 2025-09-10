@@ -2,7 +2,9 @@ package com.rk.inventory_management_system.entities;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Entity
@@ -27,5 +29,8 @@ public class Customer {
 
     @OneToMany(mappedBy = "customer")
     private List<Order> order;
+
+    @CreationTimestamp
+    private LocalDateTime createdAt;
 
 }
