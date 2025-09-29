@@ -1,19 +1,19 @@
-    package com.rk.inventory_management_system.dtos;
+package com.rk.inventory_management_system.dtos;
 
-    import lombok.*;
+import lombok.*;
 
-    import java.time.LocalDate;
+import java.time.LocalDate;
 
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @Getter
-    @Setter
-    public class ProductCategoryDto {
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@Getter
+@Setter
+public class ProductCategoryDto {
 
-        private Long id;
-        private String name;
-        private LocalDate createdDate;
-        private String description;
+    private Long id;
+    private String name;
+    private LocalDate createdDate;
+    private String description;
 
-    }
+}

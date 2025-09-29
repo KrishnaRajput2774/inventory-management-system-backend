@@ -11,11 +11,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationServiceException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -50,7 +46,7 @@ public class LoginController {
                     .httpOnly(true)
                     .secure(false)                    // false for local development
                     .path("/")
-                    .maxAge(Duration.ofHours(1))
+                    .maxAge(Duration.ofDays(30))
                     .sameSite("Lax")                  // Use "Lax" instead of "None" for local dev
                     .build();
 

@@ -1,13 +1,11 @@
 package com.rk.inventory_management_system.dtos.ProductDtos;
 
-import com.rk.inventory_management_system.dtos.ProductDto;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Data
 @AllArgsConstructor

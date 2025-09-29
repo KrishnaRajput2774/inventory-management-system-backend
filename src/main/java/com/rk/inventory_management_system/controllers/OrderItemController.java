@@ -3,7 +3,6 @@ package com.rk.inventory_management_system.controllers;
 
 import com.rk.inventory_management_system.dtos.OrderItemDto;
 import com.rk.inventory_management_system.dtos.RemoveOrderItemRequestDto;
-import com.rk.inventory_management_system.dtos.ResponseDtos.OrderItemResponseDto;
 import com.rk.inventory_management_system.dtos.ResponseDtos.OrderResponseDto;
 import com.rk.inventory_management_system.services.OrderItemService;
 import lombok.RequiredArgsConstructor;

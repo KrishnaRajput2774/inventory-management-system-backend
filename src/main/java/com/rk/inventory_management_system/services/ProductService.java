@@ -9,9 +9,9 @@ import com.rk.inventory_management_system.entities.Supplier;
 import java.util.List;
 import java.util.Optional;
 
-public interface    ProductService {
+public interface ProductService {
 
-    ProductResponseDto createProduct(ProductDto productDto);
+    ProductResponseDto createProduct(ProductResponseDto productDto);
 
     ProductResponseDto getProductById(Long id);
 
@@ -21,7 +21,7 @@ public interface    ProductService {
 
     ProductStockResponseDto getStockOfProduct(Long productId);
 
-    ProductDto increaseStockOfProduct(Long productId, Integer quantityToAdd);
+    ProductResponseDto increaseStockOfProduct(Long productId, Integer quantityToAdd);
 
     List<ProductDto> reduceStockOfProduct(Long productId, Integer quantity);
 

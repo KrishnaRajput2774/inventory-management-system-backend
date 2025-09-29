@@ -1,12 +1,12 @@
 package com.rk.inventory_management_system.controllers;
 
 import com.rk.inventory_management_system.dtos.OrderDto;
+import com.rk.inventory_management_system.dtos.OrderITemDto.OrderItemProductDto;
+import com.rk.inventory_management_system.dtos.OrderItemDto;
 import com.rk.inventory_management_system.entities.Enums.OrderStatus;
-import com.rk.inventory_management_system.entities.Order;
 import com.rk.inventory_management_system.services.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,7 +28,20 @@ public class OrderController {
 
     @PostMapping(path = "/create")
     public ResponseEntity<OrderDto> createOrder(@RequestBody OrderDto orderDto) {
-        log.info("");
+        log.info("OrderDto: {} ",orderDto);
+
+        for(OrderItemDto orderItem : orderDto.getOrderItems()){
+            log.info("OrderItem: {}",orderItem);
+            OrderItemProductDto productDto = orderItem.getProductDto();
+            log.info("ProductDto: {}",productDto);
+            log.info("ProductID: {}",productDto.getProductId());
+            log.info("Actual Price: {}",productDto.getActualPrice());
+            log.info("Selling Price: {}",productDto.getSellingPrice());
+            log.info("Selling Price: {}",productDto.getLowStockThreshold());
+
+        }
+
+
         return ResponseEntity.ok(orderService.createOrder(orderDto));
     }
 
@@ -57,7 +70,9 @@ public class OrderController {
             @PathVariable Long orderId,
             @RequestParam String orderStatus) {
 
-        orderService.updateOrderStatus(orderId, orderStatus);
+
+        orderService.updateOrderStatus(orderId,OrderStatus.valueOf(orderStatus));
         return ResponseEntity.ok("Order status updated successfully to " + orderStatus);
     }
+
 }

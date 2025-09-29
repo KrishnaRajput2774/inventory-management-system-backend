@@ -2,7 +2,6 @@ package com.rk.inventory_management_system.services;
 
 import com.rk.inventory_management_system.dtos.CustomerDto;
 import com.rk.inventory_management_system.dtos.OrderDto;
-import com.rk.inventory_management_system.entities.Customer;
 
 import java.util.List;
 

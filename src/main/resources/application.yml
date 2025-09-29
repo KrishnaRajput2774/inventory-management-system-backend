@@ -1,0 +1,77 @@
+spring:
+  application:
+    name: inventory-management-system
+
+  datasource:
+    hikari:
+      maximumPoolSize: 20
+      minimumIdle: 5
+    write:
+      jdbc-url: jdbc:postgresql://localhost:5432/inventory_db
+      username: krishna       # admin/write user
+      password: riya
+      driver-class-name: org.postgresql.Driver
+
+    read:
+      jdbc-url: jdbc:postgresql://localhost:5432/inventory_db
+      username: llm_readonly  # read-only user
+      password: password123
+      driver-class-name: org.postgresql.Driver
+
+  webflux:
+    multipart:
+      max-in-memory-size: 10MB
+  codec:
+    max-in-memory-size: 10MB
+
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: krishnarajput2774@gmail.com
+    password: szob wglr lnkk jtdh
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+jwt:
+  secret:
+    key: dchjbhjcdbshjbcdsHbhDSUhldjnnsCCSCSDcsc6545vubjbjhbjbjb
+
+admin:
+  email: krishnarajput2774@gmail.com
+
+ollama:
+  available-models:
+    - llama3.1
+    - phi4-mini
+    - phi3:mini
+  base-url: http://localhost:11434
+  default-model: llama3.1
+  timeout: 300
+
+langchain4j:
+  ollama:
+    chat-model:
+      base-url: ${ollama.base-url}
+      model-name: ${ollama.default-model}
+      temperature: 0.5
+      timeout: PT2M
+      max-tokens: 500
+    streaming-chat-model:
+      base-url: ${ollama.base-url}
+      model-name: ${ollama.default-model}
+      temperature: 0.7
+      timeout: PT2M
+
+chatbot:
+  memory:
+    window-size: 20
+  max-response-tokens: 2000
+  default-temperature: 0.7
+
+#logging:
+#  level:
+#    root: debug

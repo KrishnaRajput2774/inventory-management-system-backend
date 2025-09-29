@@ -1,7 +1,6 @@
 package com.rk.inventory_management_system.dtos.supplierDtos;
 
 import com.rk.inventory_management_system.dtos.ProductCategoryDto;
-import com.rk.inventory_management_system.dtos.SupplierDto;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

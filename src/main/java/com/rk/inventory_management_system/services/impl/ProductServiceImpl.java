@@ -5,13 +5,11 @@ import com.rk.inventory_management_system.dtos.ProductDtos.ProductResponseDto;
 import com.rk.inventory_management_system.dtos.ProductDtos.ProductSupplierResponseDto;
 import com.rk.inventory_management_system.dtos.ProductStockDetailsDto;
 import com.rk.inventory_management_system.dtos.ProductStockResponseDto;
-import com.rk.inventory_management_system.dtos.SupplierDto;
 import com.rk.inventory_management_system.entities.Product;
 import com.rk.inventory_management_system.entities.ProductCategory;
 import com.rk.inventory_management_system.entities.Supplier;
 import com.rk.inventory_management_system.exceptions.InsufficientStockException;
 import com.rk.inventory_management_system.exceptions.ResourceNotFoundException;
-import com.rk.inventory_management_system.exceptions.RuntimeConflictException;
 import com.rk.inventory_management_system.repositories.ProductRepository;
 import com.rk.inventory_management_system.services.ProductCategoryService;
 import com.rk.inventory_management_system.services.ProductService;
@@ -39,7 +37,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
-    public ProductResponseDto createProduct(ProductDto productDto) {
+    public ProductResponseDto createProduct(ProductResponseDto productDto) {
 
         log.info("Inside Add Product");
         Supplier supplier = supplierService.
@@ -77,7 +75,8 @@ public class ProductServiceImpl implements ProductService {
             product.setActualPrice(productDto.getActualPrice());
             product.setSellingPrice(productDto.getSellingPrice());
             product.setStockQuantity(productDto.getStockQuantity());
-            product.setQuantitySold(productDto.getQuantitySold());
+            product.setDiscount(productDto.getDiscount());
+            product.setQuantitySold(0);
             product.setLowStockThreshold(productDto.getLowStockThreshold() == 0 ? 10:productDto.getLowStockThreshold());
 
             // --- Set relationships manually ---
@@ -176,7 +175,7 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
-    public ProductDto increaseStockOfProduct(Long productId, Integer quantityToAdd) {
+    public ProductResponseDto increaseStockOfProduct(Long productId, Integer quantityToAdd) {
 
         validateQuantity(quantityToAdd, true);
 
@@ -192,7 +191,7 @@ public class ProductServiceImpl implements ProductService {
 
         log.info("Stock updated. New quantity: {}", updatedProduct.getStockQuantity());
 
-        return modelMapper.map(updatedProduct, ProductDto.class);
+        return modelMapper.map(updatedProduct, ProductResponseDto.class);
     }
 
     @Override

@@ -2,22 +2,27 @@ package com.rk.inventory_management_system.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.rk.inventory_management_system.config.RestClientConfig;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
 
 import java.util.HashMap;
 import java.util.Map;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OllamaClient {
 
     private final RestClient restClient;
-    private ObjectMapper objectMapper = new ObjectMapper();
+    private final WebClient webClient;
+
+    private final ObjectMapper objectMapper;
 
     private static final String URL = "api/generate";
 
@@ -45,4 +50,27 @@ public class OllamaClient {
 
     }
 
+    public Flux<String> generateStream(String model, String prompt) {
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("model",model);
+        body.put("prompt",prompt);
+        body.put("stream",true);
+
+        return webClient.post()
+                .uri(URL)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToFlux(String.class)
+                .map(chunk->{
+                    try{
+                        JsonNode root = objectMapper.readTree(chunk);
+                        log.info(root.path("response").asText(""));
+                        return root.path("response").asText("");
+                    }catch (Exception e) {
+                        return "";
+                    }
+                });
+    }
 }

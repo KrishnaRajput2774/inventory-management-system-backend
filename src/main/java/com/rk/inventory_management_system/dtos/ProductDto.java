@@ -1,12 +1,6 @@
 package com.rk.inventory_management_system.dtos;
 
-import com.fasterxml.jackson.annotation.JsonBackReference;
-import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.rk.inventory_management_system.dtos.ProductDtos.ProductSupplierResponseDto;
-import com.rk.inventory_management_system.entities.ProductCategory;
-import com.rk.inventory_management_system.entities.Supplier;
-import jakarta.persistence.ManyToOne;
-import jdk.jfr.Category;
 import lombok.*;
 
 @Getter

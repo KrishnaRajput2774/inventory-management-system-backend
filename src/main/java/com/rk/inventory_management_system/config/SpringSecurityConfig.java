@@ -2,7 +2,6 @@ package com.rk.inventory_management_system.config;
 
 
 import com.rk.inventory_management_system.filters.JwtAuthFilter;
-import com.rk.inventory_management_system.services.JwtService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,8 +20,6 @@ import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-import java.security.Security;
-
 @Configuration
 @RequiredArgsConstructor
 public class SpringSecurityConfig {
@@ -36,6 +33,7 @@ public class SpringSecurityConfig {
                 .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/login").permitAll()
+                        .requestMatchers("/api/chatbot/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(sessionConfig->

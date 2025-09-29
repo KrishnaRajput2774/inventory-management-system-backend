@@ -2,6 +2,7 @@ package com.rk.inventory_management_system.services.impl;
 
 import com.rk.inventory_management_system.dtos.OrderItemDto;
 import com.rk.inventory_management_system.dtos.ProductDto;
+import com.rk.inventory_management_system.dtos.ProductDtos.ProductResponseDto;
 import com.rk.inventory_management_system.dtos.ResponseDtos.OrderItemResponseDto;
 import com.rk.inventory_management_system.dtos.ResponseDtos.OrderResponseDto;
 import com.rk.inventory_management_system.entities.Enums.OrderStatus;
@@ -375,7 +376,7 @@ public class OrderItemServiceImpl implements OrderItemService {
 
         } else if (OrderType.PURCHASE.equals(order.getOrderType())) {
             // For purchase orders, increase stock
-            ProductDto updatedProductDto = productService.increaseStockOfProduct(productId, quantity);
+            ProductResponseDto updatedProductDto = productService.increaseStockOfProduct(productId, quantity);
             if (updatedProductDto == null) {
                 throw new StockManagementException("Failed to increase stock for product ID: " + productId);
             }

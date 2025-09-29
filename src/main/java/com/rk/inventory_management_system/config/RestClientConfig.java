@@ -11,7 +11,6 @@ public class RestClientConfig {
     @Value("${ollama.base-url}")
     private String baseUrl;
 
-
     @Bean
     public RestClient restClient() {
         return RestClient.builder()

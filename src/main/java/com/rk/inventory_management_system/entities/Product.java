@@ -2,7 +2,6 @@ package com.rk.inventory_management_system.entities;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import jdk.jfr.Category;
 import lombok.*;
 
 import java.util.Arrays;
@@ -24,32 +23,40 @@ public class Product {
     private Long id; //db level
 
 
+    @Column(name = "product_code")
     private String productCode;
 
     private String attribute;
 
     private String name;
 
-    @Column(nullable = false)
+    @Column(nullable = false, name = "brand_name")
     private String brandName;
 
     private String description;
 
+    @Column(name = "actual_price")
     private Double actualPrice;
+    @Column(name = "selling_price")
     private Double sellingPrice;
 
     private Double discount;
 
+    @Column(name = "stock_quantity")
     private Integer stockQuantity;
+
+    @Column(name = "quantity_sold")
     private Integer quantitySold = 0;
 
     @ManyToOne
+    @JsonBackReference("category-products")
     private ProductCategory category;
 
     @ManyToOne
     @JsonBackReference
     private Supplier supplier;
 
+    @Column(name = "low_stock_threshold")
     private int lowStockThreshold = 10;
 
     @PostPersist

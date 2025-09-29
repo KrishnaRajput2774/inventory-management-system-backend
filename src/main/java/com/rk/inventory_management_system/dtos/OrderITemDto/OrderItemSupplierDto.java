@@ -1,10 +1,8 @@
 package com.rk.inventory_management_system.dtos.OrderITemDto;
 
-import com.rk.inventory_management_system.dtos.ProductDto;
 import lombok.*;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Getter
 @Setter

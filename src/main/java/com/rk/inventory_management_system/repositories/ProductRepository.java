@@ -19,12 +19,18 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     Optional<Product> findByNameAndBrandNameAndSupplier(String name, String brandName, Supplier supplier);
 
-    Optional<List<Product>> findByName(String name);
-
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM Product p WHERE p.id = :id")
     Optional<Product> findByIdWithLock(Long id);
 
     @Query("SELECT p FROM Product p WHERE p.stockQuantity < p.lowStockThreshold")
     List<Product> findByStockQuantityLessThanThreshold();
+
+
+    //Extra query methods for Lang chain4J
+    List<Product> findByNameContainingIgnoreCase(String name);
+
+
+    Product findByProductCode(String productCode);
+
 }

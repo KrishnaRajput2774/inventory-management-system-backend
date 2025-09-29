@@ -2,9 +2,6 @@ package com.rk.inventory_management_system.services;
 
 import com.rk.inventory_management_system.dtos.ProductCategoryDto;
 import com.rk.inventory_management_system.dtos.ProductDto;
-import com.rk.inventory_management_system.entities.Product;
-import com.rk.inventory_management_system.entities.ProductCategory;
-import jdk.jfr.Category;
 
 import java.util.List;
 

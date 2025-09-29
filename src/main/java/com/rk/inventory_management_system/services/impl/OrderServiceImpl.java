@@ -2,7 +2,9 @@ package com.rk.inventory_management_system.services.impl;
 
 import com.rk.inventory_management_system.dtos.*;
 import com.rk.inventory_management_system.dtos.OrderITemDto.OrderItemProductDto;
+import com.rk.inventory_management_system.dtos.OrderITemDto.OrderItemSupplierDto;
 import com.rk.inventory_management_system.dtos.ProductDtos.ProductResponseDto;
+import com.rk.inventory_management_system.dtos.ProductDtos.ProductSupplierResponseDto;
 import com.rk.inventory_management_system.entities.*;
 import com.rk.inventory_management_system.entities.Enums.OrderStatus;
 import com.rk.inventory_management_system.entities.Enums.OrderType;
@@ -54,6 +56,7 @@ public class OrderServiceImpl implements OrderService {
 
             // Calculate total price before saving
             calculateOrderTotal(order);
+            log.info("Order total: {}", order.getTotalPrice());
 
             order.setCreatedAt(LocalDateTime.now());
             Order savedOrder = orderRepository.save(order);
@@ -188,28 +191,31 @@ public class OrderServiceImpl implements OrderService {
         return orderItems;
     }
 
-    private OrderItem createInwardOrderItem(Order order, Supplier supplier, OrderItemDto itemDto) {
+    private OrderItem createInwardOrderItem(Order order, Supplier newSupplier, OrderItemDto itemDto) {
         Long productId = itemDto.getProductDto().getProductId();
+        Double newSellingPrice = itemDto.getProductDto().getSellingPrice();
+        log.info("Order selling price: {}",newSellingPrice);
         int quantity = itemDto.getQuantity();
+
 
         Product product;
 
         if (productId != null) {
-            ProductResponseDto productDto = productService.getProductById(productId);
-            product = modelMapper.map(productDto, Product.class);
+            ProductResponseDto existingProductDto = productService.getProductById(productId);
+            product = mapProductResponseDtoToProduct(existingProductDto, newSupplier, itemDto);
 
             if (product == null) {
                 throw new ResourceNotFoundException("Product not found with ID: " + productId);
             }
 
-            if (!product.getSupplier().getId().equals(supplier.getId())) {
-//                throw new IllegalArgumentException(
-//                        "Product ID " + productId + " does not belong to supplier: " + supplier.getName()
-//                );
-                // if product doesnt belongs to supplier then create
+            ProductResponseDto updatedProductDto;
+            if (existingProductDto.getSupplier().getId().equals(newSupplier.getId())) {
+                log.info("Product`s Supplier id: {} equals to Actual Supplier id: {} ", existingProductDto.getSupplier().getId(), newSupplier.getId());
+                updatedProductDto = productService.increaseStockOfProduct(product.getId(), quantity);
+            } else {
+                updatedProductDto = productService.createProduct(modelMapper.map(product, ProductResponseDto.class));
+                log.info("Successfully Created new Product: {} with Supplier: {}", updatedProductDto.getName(), updatedProductDto.getSupplier().getId());
             }
-
-            ProductDto updatedProductDto = productService.increaseStockOfProduct(product.getId(), quantity);
             product = modelMapper.map(updatedProductDto, Product.class);
 
             log.info("Increased stock for product: {} (ID: {}) by {} units",
@@ -383,7 +389,7 @@ public class OrderServiceImpl implements OrderService {
             if (supplier == null) {
                 throw new IllegalStateException("Supplier details are required for inward orders");
             }
-
+            log.info("Supplier of order: : {}", supplier.getName());
             return supplier;
         } catch (Exception e) {
             log.error("Failed to process supplier details: {}", e.getMessage());
@@ -409,7 +415,7 @@ public class OrderServiceImpl implements OrderService {
         log.info("Found order with ID: {}, current status: {}", orderId, order.getOrderStatus());
 
         try {
-            Order cancelledOrder = updateOrderStatus(order, OrderStatus.CANCELLED);
+            Order cancelledOrder = updateOrderStatus(order.getId(), OrderStatus.CANCELLED);
             log.info("Order {} successfully cancelled", orderId);
             return buildOrderDtoToReturnToController(cancelledOrder);
 
@@ -439,7 +445,7 @@ public class OrderServiceImpl implements OrderService {
         log.info("Found order with ID: {}, current status: {}", orderId, order.getOrderStatus());
 
         try {
-            Order completedOrder = updateOrderStatus(order, OrderStatus.COMPLETED);
+            Order completedOrder = updateOrderStatus(order.getId(), OrderStatus.COMPLETED);
             log.info("Order {} successfully completed", orderId);
             return buildOrderDtoToReturnToController(completedOrder);
 
@@ -452,7 +458,8 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Transactional
-    public Order updateOrderStatus(Order order, OrderStatus newStatus) {
+    public Order updateOrderStatus(Long orderId, OrderStatus newStatus) {
+        Order order = orderRepository.findById(orderId).orElse(null);
         if (order == null) {
             throw new IllegalArgumentException("Order cannot be null");
         }
@@ -478,6 +485,8 @@ public class OrderServiceImpl implements OrderService {
                 // For sale orders, restore stock when cancelling
                 if (OrderType.SALE.equals(order.getOrderType())) {
                     restoreStockAndQuantitySoldForCancelledSaleOrder(order, currentStatus);
+                } else if (OrderType.PURCHASE.equals(order.getOrderType())) {
+                    reverseStockForCancelledPurchaseOrder(order, currentStatus);
                 }
             }
         }
@@ -495,6 +504,34 @@ public class OrderServiceImpl implements OrderService {
         log.info("Order {} status updated successfully to {}", order.getId(), newStatus);
 
         return updatedOrder;
+    }
+
+    /**
+     * Reverses stock increase if a PURCHASE order is cancelled after being completed
+     */
+    private void reverseStockForCancelledPurchaseOrder(Order order, OrderStatus previousStatus) {
+        if (order.getOrderItems() == null || order.getOrderItems().isEmpty()) {
+            return;
+        }
+
+        log.info("Reversing stock for cancelled purchase order: {} (previous status: {})", order.getId(), previousStatus);
+
+        // ONLY reverse stock if it was previously COMPLETED
+        if (previousStatus == OrderStatus.COMPLETED) {
+            for (OrderItem orderItem : order.getOrderItems()) {
+                Product product = orderItem.getProduct();
+                int quantityToReduce = orderItem.getQuantity();
+
+                productService.reduceStockOfProduct(product.getId(), quantityToReduce);
+
+                log.debug("Decreased stock of product {} (ID: {}) by {} units after cancellation of purchase order {}",
+                        product.getName(), product.getId(), quantityToReduce, order.getId());
+            }
+        } else {
+            log.debug("No stock adjustment needed as purchase order {} was not previously completed", order.getId());
+        }
+
+        log.info("Stock reversal completed for cancelled purchase order: {}", order.getId());
     }
 
     /**
@@ -658,17 +695,17 @@ public class OrderServiceImpl implements OrderService {
         return orderRepository.findAllById(orderIds);
     }
 
-    @Override
-    public void updateOrderStatus(Long orderId, String orderStatus) {
-        Order order = orderRepository.findById(orderId).orElseThrow(
-                () -> new ResourceNotFoundException("Order not found with id: " + orderId)
-        );
-
-        OrderStatus newStatus = OrderStatus.valueOf(orderStatus);
-        updateOrderStatus(order, newStatus);
-
-        log.info("Order with ID {} updated to status {}", orderId, orderStatus);
-    }
+//
+//    public void updateOrderStatus(Long orderId, String orderStatus) {
+//        Order order = orderRepository.findById(orderId).orElseThrow(
+//                () -> new ResourceNotFoundException("Order not found with id: " + orderId)
+//        );
+//
+//        OrderStatus newStatus = OrderStatus.valueOf(orderStatus);
+//        updateOrderStatus(order, newStatus);
+//
+//        log.info("Order with ID {} updated to status {}", orderId, orderStatus);
+//    }
 
     OrderDto buildOrderDtoToReturnToController(Order order) {
         return OrderDto.builder()
@@ -677,10 +714,10 @@ public class OrderServiceImpl implements OrderService {
                 .orderType(order.getOrderType())
                 .orderStatus(order.getOrderStatus())
                 .customer(order.getCustomer() != null
-                        ? modelMapper.map(order.getCustomer(), CustomerDto.class)
+                        ? mapCustomerToDto(order.getCustomer())
                         : null)
                 .supplier(order.getSupplier() != null
-                        ? modelMapper.map(order.getSupplier(), SupplierDto.class)
+                        ? mapSupplierToDto(order.getSupplier())
                         : null)
                 .orderItems(order.getOrderItems() != null
                         ? order.getOrderItems().stream()
@@ -693,14 +730,129 @@ public class OrderServiceImpl implements OrderService {
                 .build();
     }
 
+    private CustomerDto mapCustomerToDto(Customer customer) {
+        return CustomerDto.builder()
+                .customerId(customer.getId())
+                .name(customer.getName())
+                .contactNumber(customer.getContactNumber())
+                .email(customer.getEmail())
+                .address(customer.getAddress())
+                .orders(null)  // Explicitly set to null to avoid circular reference
+                .createdAt(customer.getCreatedAt())
+                .build();
+    }
+
+    private SupplierDto mapSupplierToDto(Supplier supplier) {
+        return SupplierDto.builder()
+                .id(supplier.getId())
+                .name(supplier.getName())
+                .contactNumber(supplier.getContactNumber())
+                .email(supplier.getEmail())
+                .address(supplier.getAddress())
+                .productsCount(supplier.getProducts().size())
+                .products(null)  // Explicitly set to null to avoid lazy loading issues
+                .createdAt(supplier.getCreatedAt())
+                .build();
+    }
+
     private OrderItemDto mapOrderItemToDto(OrderItem orderItem) {
         return OrderItemDto.builder()
                 .orderItemId(orderItem.getId())
                 .productDto(orderItem.getProduct() != null
-                        ? modelMapper.map(orderItem.getProduct(), OrderItemProductDto.class)
+                        ? mapProductToOrderItemProductDto(orderItem.getProduct())
                         : null)
+                .orderDto(null)  // Explicitly set to null to avoid circular reference
                 .priceAtOrderTime(orderItem.getPriceAtOrderTime())
                 .quantity(orderItem.getQuantity())
+                .build();
+    }
+
+    private OrderItemProductDto mapProductToOrderItemProductDto(Product product) {
+        return OrderItemProductDto.builder()
+                .productId(product.getId())
+                .productCode(product.getProductCode())
+                .name(product.getName())
+                .brandName(product.getBrandName())
+                .description(product.getDescription())
+                .sellingPrice(product.getSellingPrice())
+                .actualPrice(product.getActualPrice())
+                .discount(product.getDiscount())
+                .stockQuantity(product.getStockQuantity())
+                .quantitySold(product.getQuantitySold())
+                .category(product.getCategory() != null
+                        ? mapCategoryToDto(product.getCategory())
+                        : null)
+                .supplier(product.getSupplier() != null
+                        ? mapSupplierToDtoForProduct(product.getSupplier())
+                        : null)
+                .lowStockThreshold(product.getLowStockThreshold())
+                .attribute(product.getAttribute())
+                .build();
+    }
+
+    private ProductCategoryDto mapCategoryToDto(ProductCategory category) {
+        return ProductCategoryDto.builder()
+                .id(category.getId())
+                .name(category.getName())
+                .createdDate(category.getCreatedDate())
+                .description(category.getDescription())
+                .build();
+    }
+
+    private ProductCategory mapProductCategoryDtoToProductCategory(ProductCategoryDto category) {
+
+        return ProductCategory.builder()
+                .id(category.getId())
+                .name(category.getName())
+                .createdDate(category.getCreatedDate())
+                .description(category.getDescription())
+                .build();
+    }
+
+    // Separate supplier mapping for product to avoid deep nesting
+    private OrderItemSupplierDto mapSupplierToDtoForProduct(Supplier supplier) {
+        return OrderItemSupplierDto.builder()
+                .id(supplier.getId())
+                .name(supplier.getName())
+                .contactNumber(supplier.getContactNumber())
+                .email(supplier.getEmail())
+                .address(supplier.getAddress())
+                .productsCount(null)  // Set to null as shown in your expected output
+                .createdAt(supplier.getCreatedAt())
+                .build();
+    }
+
+    private Product mapProductResponseDtoToProduct(ProductResponseDto dto, Supplier supplier, OrderItemDto orderItemDto) {
+
+        OrderItemProductDto productDto = orderItemDto.getProductDto();
+        return Product.builder()
+                .name(productDto.getName())
+                .id(productDto.getProductId())
+                .stockQuantity(orderItemDto.getQuantity())
+                .discount(productDto.getDiscount() == null ? 0 : productDto.getDiscount())
+                .productCode(productDto.getProductCode())
+                .brandName(productDto.getBrandName())
+                .attribute(productDto.getAttribute())
+                .description(productDto.getDescription())
+                .lowStockThreshold(productDto.getLowStockThreshold())
+                .sellingPrice(productDto.getSellingPrice())
+                .actualPrice(productDto.getActualPrice())
+                .discount(productDto.getDiscount())
+                .supplier(supplier)
+                .category(mapProductCategoryDtoToProductCategory(dto.getCategory()))
+                .build();
+
+
+    }
+
+    private Supplier mapProductSupplierResponseDtoToSupplier(ProductSupplierResponseDto dto) {
+
+        return Supplier.builder()
+                .id(dto.getId())
+                .name(dto.getName())
+                .email(dto.getName())
+                .address(dto.getAddress())
+                .contactNumber(dto.getContactNumber())
                 .build();
     }
 }

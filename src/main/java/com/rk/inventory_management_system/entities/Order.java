@@ -25,18 +25,22 @@ public class Order {
     private Long id;
 
     @CreationTimestamp
-    @Column(updatable = false)
+    @Column(updatable = false, name = "created_at")
     private LocalDateTime createdAt;
 
     @CreationTimestamp
+    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "order_type")
     private OrderType orderType;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "order_status")
     private OrderStatus orderStatus;
 
     @ManyToOne
@@ -48,9 +52,11 @@ public class Order {
     @OneToMany(mappedBy = "order",cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItem> orderItems;
 
+    @Column(name = "total_price")
     private Double totalPrice;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "payment_type")
     private PaymentType paymentType;
 
 }

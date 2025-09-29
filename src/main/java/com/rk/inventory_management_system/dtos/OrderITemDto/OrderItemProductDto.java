@@ -1,9 +1,6 @@
 package com.rk.inventory_management_system.dtos.OrderITemDto;
 
-import com.rk.inventory_management_system.dtos.OrderDto;
 import com.rk.inventory_management_system.dtos.ProductCategoryDto;
-import com.rk.inventory_management_system.dtos.ProductDto;
-import com.rk.inventory_management_system.dtos.SupplierDto;
 import lombok.*;
 
 @Getter
@@ -11,13 +8,16 @@ import lombok.*;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class OrderItemProductDto {
+@ToString
+public class    OrderItemProductDto {
 
     private Long productId;
     private String productCode;
     private String name;
     private String brandName;
+    private String attribute;
 
+    private Integer lowStockThreshold;
     private String description;
 
     private Double sellingPrice;

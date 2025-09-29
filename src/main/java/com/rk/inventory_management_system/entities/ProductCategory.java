@@ -1,20 +1,21 @@
 package com.rk.inventory_management_system.entities;
 
 
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-import org.springframework.data.annotation.CreatedDate;
+import lombok.*;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 @Entity
 @Getter
 @Setter
+@Table(name = "product_category")
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
 public class ProductCategory {
 
     @Id
@@ -24,8 +25,10 @@ public class ProductCategory {
     private String name;
 
     @OneToMany(mappedBy = "category", fetch = FetchType.LAZY)
+    @JsonManagedReference("category-products")
     private List<Product> products = new ArrayList<>();
 
+    @Column(name = "created_date")
     private LocalDate createdDate;
 
     private String description;

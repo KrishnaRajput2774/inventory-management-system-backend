@@ -1,8 +1,5 @@
 package com.rk.inventory_management_system.dtos;
 
-import com.fasterxml.jackson.annotation.JsonBackReference;
-import com.fasterxml.jackson.annotation.JsonManagedReference;
-import com.rk.inventory_management_system.entities.Order;
 import lombok.*;
 
 import java.time.LocalDateTime;

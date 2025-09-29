@@ -1,6 +1,5 @@
 package com.rk.inventory_management_system.dtos.supplierDtos;
 
-import com.rk.inventory_management_system.dtos.ProductDto;
 import lombok.*;
 
 import java.time.LocalDateTime;

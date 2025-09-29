@@ -8,14 +8,13 @@ import com.rk.inventory_management_system.exceptions.ResourceNotFoundException;
 import com.rk.inventory_management_system.exceptions.RuntimeConflictException;
 import com.rk.inventory_management_system.repositories.CustomerRepository;
 import com.rk.inventory_management_system.services.CustomerService;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor

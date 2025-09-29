@@ -21,6 +21,7 @@ public class Customer {
 
     private String name;
 
+    @Column(name = "contact_number")
     private String contactNumber;
 
     private String email;
@@ -31,6 +32,7 @@ public class Customer {
     private List<Order> order;
 
     @CreationTimestamp
+    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
 }

@@ -2,7 +2,6 @@ package com.rk.inventory_management_system.controllers;
 
 import com.rk.inventory_management_system.dtos.CustomerDto;
 import com.rk.inventory_management_system.dtos.OrderDto;
-import com.rk.inventory_management_system.entities.Customer;
 import com.rk.inventory_management_system.services.CustomerService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -14,7 +13,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/customer")
 @RequiredArgsConstructor
-public class CustomerController {
+public class    CustomerController {
 
     private final CustomerService customerService;
 
@@ -37,14 +36,4 @@ public class CustomerController {
     public ResponseEntity<List<OrderDto>> getCustomerOrders(@PathVariable Long customerId) {
         return ResponseEntity.ok(customerService.getCustomerOrders(customerId));
     }
-
-
-
-
-
-
-
-
-
-
 }
